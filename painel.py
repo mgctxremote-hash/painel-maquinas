@@ -15,6 +15,14 @@ PESO_VAPOR = {
     "Enrolador 2": 1, "Calandra": 2
 }
 
+# Ordem de Exibição das Cores
+ORDEM_CORES = {
+    "VERDE": 1,
+    "AMARELO_SETUP": 2,
+    "AMARELO_MANUTENCAO": 3,
+    "VERMELHO": 4
+}
+
 # 3. ESTILOS VISUAIS (CSS)
 st.markdown("""
 <style>
@@ -36,7 +44,17 @@ def atualizar_conteudo():
         df = pd.read_excel(URL_CSV) if "xlsx" in URL_CSV else pd.read_csv(URL_CSV)
         df.columns = ["Timestamp", "Maquina", "Estado", "Energia", "Data"]
         df['Data_Calc'] = pd.to_datetime(df['Data'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        
+        # Filtra o último estado conhecido de cada máquina
         df_estado_atual = df.sort_values('Data_Calc').drop_duplicates(subset=['Maquina'], keep='last')
+        
+        # ---------------------------------------------------------
+        # NOVA LÓGICA: Ordenar a tabela pela prioridade das cores
+        # ---------------------------------------------------------
+        df_estado_atual['Ordem_Exibicao'] = df_estado_atual['Estado'].map(ORDEM_CORES).fillna(5)
+        df_estado_atual = df_estado_atual.sort_values('Ordem_Exibicao')
+        # ---------------------------------------------------------
+
     except Exception:
         st.warning("A sincronizar com a nuvem...")
         return
