@@ -98,9 +98,3 @@ def atualizar_conteudo():
                         <div class="maq-tempo">⏱️ {tempo_str}</div>
                     </div>
                     """, unsafe_allow_html=True)
-
-# Executar a função do painel
-atualizar_conteudo()
-streamlit
-pandas
-openpyxl
