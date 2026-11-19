@@ -1,209 +1,242 @@
 import time
-import requests
-import threading
-from bs4 import BeautifulSoup
+import streamlit as st
+import pandas as pd
 from datetime import datetime
-from requests_negotiate_sspi import HttpNegotiateAuth
-import pystray
-from pystray import MenuItem as item
-from PIL import Image, ImageDraw
+from zoneinfo import ZoneInfo
 
-# ==========================================
-# CONFIGURAÇÕES GERAIS
-# ==========================================
-URL_INTRANET = "http://zsql02/te/TEAP20/App_SF/wf_CenarioAP.aspx?posto=MORODRIGUES#!"
-TEMPO_ATUALIZACAO_SEGUNDOS = 5
+# 1. CONFIGURAÇÃO DA PÁGINA
+st.set_page_config(page_title="Painel Central - Biomassa", page_icon="🔥", layout="wide")
 
-TELEGRAM_TOKEN = "8642176831:AAFkKoCjdmd19jH_U3LuUGZcyciRMBNHbms"
-TELEGRAM_CHAT_IDS = ["8881477734", "8327669176"]
+# 2. DADOS E LIGAÇÕES
+URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStHxFw9mRCwhbqLEs9N75ht75YMilTncgASFmVVHJMG9UmTSxuntFAPtAWcl7j-0t1cPLF8wmarryg/pub?output=csv"
 
-# ==========================================
-# CONFIGURAÇÕES DO GOOGLE SHEETS
-# ==========================================
-URL_GOOGLE_FORMS = "https://docs.google.com/forms/d/e/1FAIpQLSehYxyhBq4VAewYexzvAVd5y1vLZJ2p0MfLAuDpj9Q7hEJSmw/formResponse"
-
-ENTRY_MAQUINA = "entry.1563055906"
-ENTRY_ESTADO = "entry.1954910161"
-ENTRY_ENERGIA = "entry.559197562"
-ENTRY_DATA = "entry.994032765"
-
-# ==========================================
-# DICIONÁRIOS DE MÁQUINAS E PESOS
-# ==========================================
-TIPO_ENERGIA = {
-    "RAM 1": "TERMOFLUIDO", "RAM 2": "GÁS", "RAM 3": "GÁS",
-    "RAM 5": "GÁS", "RAM 6": "GÁS", "RAM 7": "GÁS",
-    "GAS 1": "GÁS", "GAS 2": "GÁS", "ROT-TINT": "NENHUMA", "ROT-PREP": "NENHUMA"
-}
-
+# Pesos de Vapor (nomes curtos e extensos)
 PESO_VAPOR = {
-    "LP5": 5, "SEC 33": 5, "PAD 2": 4, "KUST 1": 3, "KUST 3": 3,
-    "TERM 3": 3, "M.L.6": 4, "ESC 1": 4, "ENR 1": 1, "ENR 2": 1, "CALAND": 2
+    "LP5": 5, "Secador 33": 5, "SEC 33": 5, "PAD 2": 4,
+    "Kuster 1": 3, "KUST 1": 3, "Kuster 3": 3, "KUST 3": 3,
+    "Termofixação 3": 3, "TERM 3": 3, "M.L.6": 4,
+    "Escovadeira 1": 4, "ESC 1": 4,
+    "Enrolador 1": 1, "ENR 1": 1, "Enrolador 2": 1, "ENR 2": 1,
+    "Calandra": 2, "CALAND": 2
 }
 
-NOMES_EXTENSOS = {
-    "RAM 1": "Râmula 1", "RAM 2": "Râmula 2", "RAM 3": "Râmula 3",
-    "RAM 5": "Râmula 5", "RAM 6": "Râmula 6", "RAM 7": "Râmula 7",
-    "SEC 33": "Secador 33", "LP5": "LP5", "KUST 1": "Kuster 1",
-    "KUST 3": "Kuster 3", "ROT-TINT": "Rotativa Tinturaria",
-    "ROT-PREP": "Rotativa Preparação", "GAS 1": "Gaseadeira 1", "GAS 2": "Gaseadeira 2"
+# 3. ESTILOS VISUAIS (ZSQL02 + PISCAR APENAS QUANDO ATIVO NO SITE)
+st.markdown("""
+<style>
+@keyframes zsql-blink-header {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.15; }
 }
 
-executando = True
+@keyframes zsql-blink-borda {
+    0%, 100% { box-shadow: 0 0 0 2px #8c8c8c; }
+    50% { box-shadow: 0 0 14px 3px #FFD700; }
+}
 
-# ==========================================
-# LÓGICA PRINCIPAL (CÉREBRO COM TELEGRAM E ÍCONE)
-# ==========================================
-class MonitorInteligente:
-    def __init__(self):
-        self.maquinas_a_piscar = {}
-        self.estados_nuvem = {}  # Guarda o último estado enviado à planilha por máquina
-        self.sessao = requests.Session()
-        self.sessao.auth = HttpNegotiateAuth()
+.zsql-card {
+    border: 1px solid #8c8c8c;
+    border-radius: 3px;
+    overflow: hidden;
+    font-family: "Segoe UI", Arial, sans-serif;
+    text-align: center;
+    margin-bottom: 14px;
+    min-height: 112px;
+}
 
-        self.historico_arranque = {}
-        self.silenciadas = {}
-        self.relatorio_enviado = ""
+.zsql-header {
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 5px 8px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
 
-    def enviar_telegram(self, titulo, mensagem):
-        for chat_id in TELEGRAM_CHAT_IDS:
-            try:
-                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                dados = {"chat_id": chat_id, "text": f"*{titulo}*\n{mensagem}", "parse_mode": "Markdown"}
-                requests.post(url, data=dados, timeout=5)
-            except Exception:
-                pass
+.zsql-faixa-amarela {
+    height: 5px;
+    width: 100%;
+    background-color: #FFEA00;
+}
 
-    def enviar_lote_nuvem(self, lista_envios):
-        for maquina, estado, energia in lista_envios:
-            try:
-                data_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                dados_form = {
-                    ENTRY_MAQUINA: maquina,
-                    ENTRY_ESTADO: estado,
-                    ENTRY_ENERGIA: energia,
-                    ENTRY_DATA: data_atual
-                }
-                requests.post(URL_GOOGLE_FORMS, data=dados_form, timeout=5)
-                time.sleep(0.1)
-            except Exception:
-                pass
+.zsql-faixa-laranja {
+    height: 5px;
+    width: 100%;
+    background-color: #FF9800;
+}
 
-    def verificar_dados(self):
-        agora = time.time()
-        hora_texto = datetime.now().strftime("%H:%M")
+.zsql-body {
+    padding: 8px 8px 10px 8px;
+    color: #0D2359;
+}
 
-        horarios_turno = ["05:45", "13:45", "21:45"]
-        if hora_texto in horarios_turno and self.relatorio_enviado != hora_texto:
-            self.enviar_telegram(
-                "📋 Relatório de Transição de Turno",
-                "Os dados completos deste turno já estão fechados e disponíveis no painel na nuvem."
-            )
-            self.relatorio_enviado = hora_texto
+.zsql-data {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 3px;
+}
 
-        try:
-            resposta = self.sessao.get(URL_INTRANET, timeout=10)
-            resposta.raise_for_status()
-            site = BeautifulSoup(resposta.text, 'lxml')
+.zsql-energia {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
 
-            atuais_piscando = {}
-            estados_pagina = {}
+.zsql-tempo {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1F356B;
+}
 
-            for maq in site.find_all('input', {'type': 'submit'}):
-                nome = maq.get('value', '').strip()
-                if not nome:
-                    continue
-                classes = maq.get('class', [])
+/* Estados fixos (estáticos) */
+.zsql-verde {
+    background-color: #EAF8FC;
+}
+.zsql-verde .zsql-header {
+    background-color: #007A00;
+}
 
-                if "apxCenarioMAQ" in classes:
-                    cor_base = "VERDE"
-                elif "apxCenarioINA" in classes:
-                    cor_base = "VERMELHO"
-                elif "apxCenarioSTP" in classes:
-                    cor_base = "AMARELO_SETUP"
-                elif "apxCenaMANOFF" in classes:
-                    cor_base = "AMARELO_MANUTENCAO"
+.zsql-vermelho {
+    background-color: #D9D9D9;
+}
+.zsql-vermelho .zsql-header {
+    background-color: #800000;
+}
+
+.zsql-setup {
+    background-color: #D9D9D9;
+}
+.zsql-setup .zsql-header {
+    background-color: #800000;
+}
+
+.zsql-manutencao {
+    background-color: #FFFDE7;
+}
+.zsql-manutencao .zsql-header {
+    background-color: #800000;
+}
+
+/* Aplicado SOMENTE quando o monitor enviou *_PISCANDO */
+.piscando {
+    animation: zsql-blink-borda 1s linear infinite;
+}
+.piscando .zsql-header {
+    animation: zsql-blink-header 1s linear infinite;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🔥 Central de Comando: Caldeira Biomassa")
+
+# 4. BLOCO DE ATUALIZAÇÃO AUTOMÁTICA (A cada 10 segundos)
+@st.fragment(run_every=10)
+def atualizar_conteudo():
+    try:
+        url_sem_cache = f"{URL_CSV}&cb={int(time.time())}"
+        df = pd.read_excel(url_sem_cache) if "xlsx" in URL_CSV else pd.read_csv(url_sem_cache)
+        if df.empty:
+            st.info("Ainda não existem registos na planilha.")
+            return
+
+        df.columns = ["Timestamp", "Maquina", "Estado", "Energia", "Data"]
+        df['Maquina'] = df['Maquina'].astype(str).str.strip()
+        df['Estado'] = df['Estado'].astype(str).str.strip().str.upper()
+        df['Energia'] = df['Energia'].astype(str).str.strip().str.upper()
+        df['Data_Calc'] = pd.to_datetime(df['Data'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
+        df['Estado_Base'] = df['Estado'].str.replace('_PISCANDO', '', regex=False)
+        df = df.sort_values('Data_Calc', na_position='first')
+
+        # Monta o estado atual preservando o início da cor base (sem zerar o tempo ao parar de piscar)
+        registos = []
+        for maq, grupo in df.groupby('Maquina', sort=False):
+            ultima = grupo.iloc[-1]
+            estado_atual = ultima['Estado']
+            estado_base = ultima['Estado_Base']
+            piscando = estado_atual.endswith('_PISCANDO')
+
+            data_inicio = ultima['Data_Calc']
+            for idx in range(len(grupo) - 1, -1, -1):
+                if grupo.iloc[idx]['Estado_Base'] == estado_base:
+                    data_inicio = grupo.iloc[idx]['Data_Calc']
                 else:
-                    continue
+                    break
 
-                piscando = "blink_me" in classes
-                estados_pagina[nome] = f"{cor_base}_PISCANDO" if piscando else cor_base
+            registos.append({
+                "Maquina": maq,
+                "Estado": estado_atual,
+                "Estado_Base": estado_base,
+                "Piscando": piscando,
+                "Energia": ultima['Energia'],
+                "Data_Calc": data_inicio
+            })
 
-                if piscando:
-                    atuais_piscando[nome] = cor_base
+        df_estado_atual = pd.DataFrame(registos)
 
-            # Garantia: se uma máquina estava piscando e mudou para uma classe não mapeada, tira o piscar
-            for maq_antiga, cor_antiga in self.maquinas_a_piscar.items():
-                if maq_antiga not in estados_pagina:
-                    estados_pagina[maq_antiga] = cor_antiga
+        prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "AMARELO": 2, "VERMELHO": 3}
+        df_estado_atual['Ordem_Pisca'] = df_estado_atual['Piscando'].map({True: 0, False: 1})
+        df_estado_atual['Ordem_Cor'] = df_estado_atual['Estado_Base'].map(prioridade).fillna(2)
+        df_estado_atual = df_estado_atual.sort_values(['Ordem_Pisca', 'Ordem_Cor', 'Maquina'])
+    except Exception:
+        st.warning("A sincronizar com a nuvem...")
+        return
 
-            # 1. Envia para o Google Sheets apenas o que mudou (começou ou parou de piscar, ou trocou de cor)
-            envios_nuvem = []
-            for maq, estado_novo in estados_pagina.items():
-                if self.estados_nuvem.get(maq) != estado_novo:
-                    nome_real = NOMES_EXTENSOS.get(maq, maq)
-                    energia = TIPO_ENERGIA.get(maq, "VAPOR")
-                    envios_nuvem.append((nome_real, estado_novo, energia))
-                    self.estados_nuvem[maq] = estado_novo
+    # Cálculo da Carga Térmica (conta VERDE e VERDE_PISCANDO)
+    carga_vapor_atual = 0
+    for _, row in df_estado_atual.iterrows():
+        if row['Estado_Base'] == "VERDE" and row['Energia'] == "VAPOR":
+            carga_vapor_atual += PESO_VAPOR.get(row['Maquina'], 2)
 
-            if envios_nuvem:
-                threading.Thread(target=self.enviar_lote_nuvem, args=(envios_nuvem,), daemon=True).start()
+    col_gauge1, col_gauge2 = st.columns([1, 3])
+    with col_gauge1:
+        st.metric(label="Carga Térmica (Vapor)", value=f"{carga_vapor_atual} Pts")
+    with col_gauge2:
+        st.progress(min(carga_vapor_atual / 30.0, 1.0))
+        if carga_vapor_atual > 20:
+            st.warning("⚠️ ALERTA: Pico de Carga Detetado. Prepare a fornalha!")
 
-            # 2. Alertas do Telegram (somente quando começa a piscar / muda de cor piscando)
-            for maq, cor_atual in atuais_piscando.items():
-                if maq not in self.maquinas_a_piscar or self.maquinas_a_piscar[maq] != cor_atual:
-                    nome_real = NOMES_EXTENSOS.get(maq, maq)
-                    energia = TIPO_ENERGIA.get(maq, "VAPOR")
+    st.markdown("---")
+    st.subheader("Estado das Máquinas (Tempo Real)")
 
-                    if maq in self.silenciadas and agora < self.silenciadas[maq]:
-                        continue
+    try:
+        agora = datetime.now(ZoneInfo("Europe/Lisbon")).replace(tzinfo=None)
+    except Exception:
+        agora = datetime.now()
 
-                    if maq not in self.historico_arranque:
-                        self.historico_arranque[maq] = []
-                    self.historico_arranque[maq].append(agora)
-                    self.historico_arranque[maq] = [t for t in self.historico_arranque[maq] if agora - t <= 300]
+    maquinas_lista = list(df_estado_atual.iterrows())
 
-                    if len(self.historico_arranque[maq]) >= 3:
-                        self.enviar_telegram(
-                            f"⚠️ SPAM / AFINAÇÃO: {nome_real}",
-                            "A máquina alterou o estado 3 vezes em menos de 5 min.\nAlertas silenciados por 15 minutos."
-                        )
-                        self.silenciadas[maq] = agora + 900
-                        self.historico_arranque[maq] = []
-                        continue
+    for i in range(0, len(maquinas_lista), 4):
+        cols = st.columns(4)
+        for j in range(4):
+            if i + j < len(maquinas_lista):
+                _, row = maquinas_lista[i + j]
+                maquina = row['Maquina']
+                estado_base = row['Estado_Base']
+                piscando = row['Piscando']
+                energia = row['Energia']
+                data_alteracao = row['Data_Calc']
 
-                    prefixo = "A" if "Rotativa" in nome_real else "A máquina"
-                    if cor_atual == "VERDE":
-                        self.enviar_telegram(f"🟢 LIGAR: {nome_real}", f"{prefixo} {nome_real} está a piscar a VERDE.\nConsumo de {energia} ativado.")
-                    elif cor_atual == "VERMELHO":
-                        self.enviar_telegram(f"🔴 PARAR: {nome_real}", f"{prefixo} {nome_real} está a piscar a VERMELHO.\nConsumo de {energia} cortado.")
-                    elif cor_atual == "AMARELO_SETUP":
-                        self.enviar_telegram(f"🟡 SETUP: {nome_real}", f"{prefixo} {nome_real} entrou em Limpeza/Setup (amarelo).")
-                    elif cor_atual == "AMARELO_MANUTENCAO":
-                        self.enviar_telegram(f"🟠 AVARIA: {nome_real}", f"{prefixo} {nome_real} aguarda manutenção (laranja).")
+                if pd.notnull(data_alteracao):
+                    total_seg = max(0, int((agora - data_alteracao).total_seconds()))
+                    horas, resto = divmod(total_seg, 3600)
+                    minutos, segundos = divmod(resto, 60)
+                    tempo_str = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
+                    data_str = data_alteracao.strftime('%Y-%m-%d %H:%M')
+                else:
+                    tempo_str = "Desconhecido"
+                    data_str = "--"
 
-            self.maquinas_a_piscar = atuais_piscando
-        except Exception:
-            pass
+                if estado_base == "VERDE":
+                    classe_cor = "zsql-verde"
+                    faixa_html = ""
+                elif estado_base == "VERMELHO":
+                    classe_cor = "zsql-vermelho"
+                    faixa_html = ""
+                elif estado_base == "AMARELO_MANUTENCAO":
+                    classe_cor = "zsql-manutencao"
+                    faixa_html = '<div class="zsql-faixa-amarela"></div>'
+                else:
+                    classe_cor = "zsql-setup"
+                    faixa_html = '<div class="zsql-faixa-laranja"></div>'
 
-def loop_monitorizacao():
-    monitor = MonitorInteligente()
-    while executando:
-        monitor.verificar_dados()
-        time.sleep(TEMPO_ATUALIZACAO_SEGUNDOS)
-
-def sair_do_programa(icon, item):
-    global executando
-    executando = False
-    icon.stop()
-
-def criar_imagem_icone():
-    imagem = Image.new('RGB', (64, 64), color='darkgreen')
-    desenho = ImageDraw.Draw(imagem)
-    desenho.rectangle((24, 24, 40, 40), fill='white')
-    return imagem
-
-if __name__ == "__main__":
-    threading.Thread(target=loop_monitorizacao, daemon=True).start()
-    icone_bandeja = pystray.Icon("Caldeira", criar_imagem_icone(), "Monitor", pystray.Menu(item('Encerrar', sair_do_programa)))
-    icone_bandeja.run()
+                classe_pisca =
