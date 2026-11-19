@@ -1,5 +1,7 @@
+import time
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -9,6 +11,7 @@ st.set_page_config(page_title="Painel Central - Biomassa", page_icon="🔥", lay
 # 2. LIGAÇÃO AO FIREBASE
 FIREBASE_URL = "https://caldeiras-99-default-rtdb.europe-west1.firebasedatabase.app"
 CAMINHO_FIREBASE = f"{FIREBASE_URL}/painel_biomassa.json"
+TZ_LISBOA = ZoneInfo("Europe/Lisbon")
 
 # Pesos de Vapor
 PESO_VAPOR = {
@@ -111,13 +114,97 @@ st.markdown("""
 
 st.title("🔥 Central de Comando: Caldeira Biomassa")
 
-# 4. ATUALIZAÇÃO EM TEMPO REAL (A cada 3 segundos)
-@st.fragment(run_every=3)
+@st.cache_data(ttl=2, show_spinner=False)
+def buscar_dados_firebase():
+    resp = requests.get(CAMINHO_FIREBASE, timeout=5)
+    resp.raise_for_status()
+    return resp.json()
+
+def calcular_offset_zsql_ms(dados):
+    """Calcula a diferença exata (ms) entre o relógio do zsql02 e o relógio UTC."""
+    try:
+        relogio_zsql = dados.get("relogio_zsql")
+        firebase_ts = dados.get("firebase_ts")
+        if relogio_zsql and isinstance(firebase_ts, (int, float)):
+            dt_zsql = datetime.strptime(relogio_zsql, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ_LISBOA)
+            return int(dt_zsql.timestamp() * 1000) - int(firebase_ts)
+    except Exception:
+        pass
+    return 0
+
+def obter_agora_zsql(offset_ms):
+    agora_ms = int(time.time() * 1000) + offset_ms
+    return datetime.fromtimestamp(agora_ms / 1000.0, TZ_LISBOA).replace(tzinfo=None)
+
+def render_barra_relogio_zsql():
+    """Barra inferior estilo zsql02 com relógio em tempo real (JS) sincronizado com o servidor."""
+    try:
+        dados_ini = buscar_dados_firebase() or {}
+    except Exception:
+        dados_ini = {}
+
+    offset_ms = calcular_offset_zsql_ms(dados_ini)
+    fonte = dados_ini.get("relogio_fonte", "lisboa")
+    server_zsql_ms = int(time.time() * 1000) + offset_ms
+
+    html_relogio = f"""
+    <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        background:#0B0B0B;
+        color:#FFFFFF;
+        padding:7px 14px;
+        border-radius:4px;
+        font-family:'Segoe UI', Arial, sans-serif;
+        font-size:13px;
+        font-weight:700;
+        border:1px solid #2a2a2a;
+        box-sizing:border-box;
+    ">
+        <span>ZSQL02 | SINCRONIZAÇÃO: {fonte.upper()}</span>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span id="relogio-zsql">--</span>
+            <span style="
+                width:12px;
+                height:12px;
+                border-radius:50%;
+                background:radial-gradient(circle at 35% 35%, #9cff9c, #00c800 60%, #006600);
+                display:inline-block;
+                box-shadow:0 0 6px #00e600;
+            "></span>
+        </div>
+    </div>
+    <script>
+        const baseZsqlMs = {server_zsql_ms};
+        const inicioLocal = performance.now();
+        const fmt = new Intl.DateTimeFormat('en-GB', {{
+            timeZone: 'Europe/Lisbon',
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hourCycle: 'h23'
+        }});
+
+        function atualizarRelogio() {{
+            const agoraMs = baseZsqlMs + (performance.now() - inicioLocal);
+            const partes = Object.fromEntries(
+                fmt.formatToParts(new Date(agoraMs)).map(p => [p.type, p.value])
+            );
+            document.getElementById('relogio-zsql').textContent =
+                `${{partes.day}}-${{partes.month}}-${{partes.year}} ${{partes.hour}}:${{partes.minute}}:${{partes.second}}`;
+        }}
+
+        atualizarRelogio();
+        setInterval(atualizarRelogio, 1000);
+    </script>
+    """
+    components.html(html_relogio, height=42)
+
+# 4. ATUALIZAÇÃO DOS CARDS EM TEMPO REAL (A cada 2 segundos)
+@st.fragment(run_every=2)
 def atualizar_conteudo():
     try:
-        resp = requests.get(CAMINHO_FIREBASE, timeout=5)
-        resp.raise_for_status()
-        dados = resp.json()
+        dados = buscar_dados_firebase()
         if not dados or not dados.get("maquinas"):
             st.info("Aguardando o primeiro envio do monitor local...")
             return
@@ -126,11 +213,14 @@ def atualizar_conteudo():
         return
 
     atualizado_em = dados.get("atualizado_em", "--")
+    offset_ms = calcular_offset_zsql_ms(dados)
+    agora = obter_agora_zsql(offset_ms)
+
     maquinas = dados.get("maquinas", [])
     if isinstance(maquinas, dict):
         maquinas = list(maquinas.values())
 
-    # Ordena: piscando primeiro, depois VERDE, MANUTENÇÃO, SETUP, VERMELHO
+    maquinas = list(maquinas)
     prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "VERMELHO": 3}
     maquinas.sort(key=lambda m: (
         0 if m.get("piscando") else 1,
@@ -156,11 +246,6 @@ def atualizar_conteudo():
     st.markdown("---")
     st.subheader("Estado das Máquinas (Tempo Real)")
 
-    try:
-        agora = datetime.now(ZoneInfo("Europe/Lisbon")).replace(tzinfo=None)
-    except Exception:
-        agora = datetime.now()
-
     qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
 
     for i in range(0, len(maquinas), 4):
@@ -177,9 +262,15 @@ def atualizar_conteudo():
                 try:
                     dt_inicio = datetime.strptime(inicio_str, "%d/%m/%Y %H:%M:%S")
                     total_seg = max(0, int((agora - dt_inicio).total_seconds()))
-                    horas, resto = divmod(total_seg, 3600)
+                    dias, resto_dia = divmod(total_seg, 86400)
+                    horas, resto = divmod(resto_dia, 3600)
                     minutos, segundos = divmod(resto, 60)
-                    tempo_str = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
+
+                    if dias > 0:
+                        tempo_str = f"{dias}d {horas:02d}h {minutos:02d}m {segundos:02d}s"
+                    else:
+                        tempo_str = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
+
                     data_str = dt_inicio.strftime("%Y-%m-%d %H:%M")
                 except Exception:
                     tempo_str = "Desconhecido"
@@ -215,6 +306,7 @@ def atualizar_conteudo():
                 with cols[j]:
                     st.markdown(card_html, unsafe_allow_html=True)
 
-    st.caption(f"🟢 Tempo Real ativo | Último pulso do monitor: {atualizado_em} | Máquinas a piscar: {qtd_piscando}")
+    st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas a piscar: {qtd_piscando}")
 
 atualizar_conteudo()
+render_barra_relogio_zsql()
