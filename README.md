@@ -5,3 +5,4 @@ atualizar_conteudo()
 streamlit
 pandas
 openpyxl
+requests
