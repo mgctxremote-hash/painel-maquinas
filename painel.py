@@ -6,7 +6,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # 1. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Painel Central - Biomassa", page_icon="🔥", layout="wide")
+st.set_page_config(page_title="Painel Central - Biomassa", layout="wide")
 
 # 2. LIGAÇÃO AO FIREBASE
 FIREBASE_URL = "https://caldeiras-99-default-rtdb.europe-west1.firebasedatabase.app"
