@@ -1,17 +1,16 @@
-import time
+import requests
 import streamlit as st
-import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Painel Central - Biomassa", page_icon="🔥", layout="wide")
 
-# 2. DADOS E LIGAÇÕES
-# Dica: para atualizar sem o cache de 5 min do Google, troque pelo link /export?format=csv da planilha
-URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStHxFw9mRCwhbqLEs9N75ht75YMilTncgASFmVVHJMG9UmTSxuntFAPtAWcl7j-0t1cPLF8wmarryg/pub?output=csv"
+# 2. LIGAÇÃO AO FIREBASE
+FIREBASE_URL = "https://caldeiras-99-default-rtdb.europe-west1.firebasedatabase.app"
+CAMINHO_FIREBASE = f"{FIREBASE_URL}/painel_biomassa.json"
 
-# Pesos de Vapor (nomes curtos e extensos)
+# Pesos de Vapor
 PESO_VAPOR = {
     "LP5": 5, "Secador 33": 5, "SEC 33": 5, "PAD 2": 4,
     "Kuster 1": 3, "KUST 1": 3, "Kuster 3": 3, "KUST 3": 3,
@@ -21,7 +20,7 @@ PESO_VAPOR = {
     "Calandra": 2, "CALAND": 2
 }
 
-# 3. ESTILOS VISUAIS (ZSQL02 + PISCAR APENAS QUANDO ATIVO NO SITE)
+# 3. ESTILOS VISUAIS (ZSQL02 + PISCAR EM TEMPO REAL)
 st.markdown("""
 <style>
 @keyframes zsql-blink-header {
@@ -89,36 +88,18 @@ st.markdown("""
     color: #1F356B;
 }
 
-/* Estados fixos (estáticos) */
-.zsql-verde {
-    background-color: #EAF8FC;
-}
-.zsql-verde .zsql-header {
-    background-color: #007A00;
-}
+.zsql-verde { background-color: #EAF8FC; }
+.zsql-verde .zsql-header { background-color: #007A00; }
 
-.zsql-vermelho {
-    background-color: #D9D9D9;
-}
-.zsql-vermelho .zsql-header {
-    background-color: #800000;
-}
+.zsql-vermelho { background-color: #D9D9D9; }
+.zsql-vermelho .zsql-header { background-color: #800000; }
 
-.zsql-setup {
-    background-color: #D9D9D9;
-}
-.zsql-setup .zsql-header {
-    background-color: #800000;
-}
+.zsql-setup { background-color: #D9D9D9; }
+.zsql-setup .zsql-header { background-color: #800000; }
 
-.zsql-manutencao {
-    background-color: #FFFDE7;
-}
-.zsql-manutencao .zsql-header {
-    background-color: #800000;
-}
+.zsql-manutencao { background-color: #FFFDE7; }
+.zsql-manutencao .zsql-header { background-color: #800000; }
 
-/* Aplicado SOMENTE quando a última linha da máquina termina com _PISCANDO */
 .piscando {
     animation: zsql-blink-borda 1s linear infinite;
 }
@@ -130,71 +111,39 @@ st.markdown("""
 
 st.title("🔥 Central de Comando: Caldeira Biomassa")
 
-# 4. BLOCO DE ATUALIZAÇÃO AUTOMÁTICA (A cada 10 segundos)
-@st.fragment(run_every=10)
+# 4. ATUALIZAÇÃO EM TEMPO REAL (A cada 3 segundos)
+@st.fragment(run_every=3)
 def atualizar_conteudo():
     try:
-        separador = "&" if "?" in URL_CSV else "?"
-        url_sem_cache = f"{URL_CSV}{separador}cb={int(time.time())}"
-        df = pd.read_excel(url_sem_cache) if "xlsx" in URL_CSV else pd.read_csv(url_sem_cache)
-        if df.empty:
-            st.info("Ainda não existem registos na planilha.")
+        resp = requests.get(CAMINHO_FIREBASE, timeout=5)
+        resp.raise_for_status()
+        dados = resp.json()
+        if not dados or not dados.get("maquinas"):
+            st.info("Aguardando o primeiro envio do monitor local...")
             return
-
-        df.columns = ["Timestamp", "Maquina", "Estado", "Energia", "Data"]
-        df["Maquina"] = df["Maquina"].astype(str).str.strip()
-        df["Estado"] = df["Estado"].astype(str).str.strip().str.upper()
-        df["Energia"] = df["Energia"].astype(str).str.strip().str.upper()
-        df["Estado_Base"] = df["Estado"].str.replace("_PISCANDO", "", regex=False)
-
-        # Converte datas de forma tolerante sem alterar a ordem original do Google Forms
-        df["Data_Calc"] = pd.to_datetime(df["Data"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
-        faltantes = df["Data_Calc"].isna()
-        if faltantes.any():
-            df.loc[faltantes, "Data_Calc"] = pd.to_datetime(df.loc[faltantes, "Data"], dayfirst=True, errors="coerce")
-
-        ultima_linha_sheet = str(df.iloc[-1]["Data"])
-
-        # Mantém a ordem exata do Google Forms: iloc[-1] é SEMPRE o último registo enviado
-        registos = []
-        for maq, grupo in df.groupby("Maquina", sort=False):
-            ultima = grupo.iloc[-1]
-            estado_atual = ultima["Estado"]
-            estado_base = ultima["Estado_Base"]
-            piscando = estado_atual.endswith("_PISCANDO")
-
-            data_inicio = ultima["Data_Calc"]
-            for idx in range(len(grupo) - 1, -1, -1):
-                if grupo.iloc[idx]["Estado_Base"] == estado_base:
-                    if pd.notnull(grupo.iloc[idx]["Data_Calc"]):
-                        data_inicio = grupo.iloc[idx]["Data_Calc"]
-                else:
-                    break
-
-            registos.append({
-                "Maquina": maq,
-                "Estado": estado_atual,
-                "Estado_Base": estado_base,
-                "Piscando": piscando,
-                "Energia": ultima["Energia"],
-                "Data_Calc": data_inicio
-            })
-
-        df_estado_atual = pd.DataFrame(registos)
-
-        prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "AMARELO": 2, "VERMELHO": 3}
-        df_estado_atual["Ordem_Pisca"] = df_estado_atual["Piscando"].map({True: 0, False: 1})
-        df_estado_atual["Ordem_Cor"] = df_estado_atual["Estado_Base"].map(prioridade).fillna(2)
-        df_estado_atual = df_estado_atual.sort_values(["Ordem_Pisca", "Ordem_Cor", "Maquina"])
     except Exception:
-        st.warning("A sincronizar com a nuvem...")
+        st.warning("A sincronizar com o servidor em tempo real...")
         return
 
-    # Cálculo da Carga Térmica (conta VERDE e VERDE_PISCANDO)
-    carga_vapor_atual = 0
-    for _, row in df_estado_atual.iterrows():
-        if row["Estado_Base"] == "VERDE" and row["Energia"] == "VAPOR":
-            carga_vapor_atual += PESO_VAPOR.get(row["Maquina"], 2)
+    atualizado_em = dados.get("atualizado_em", "--")
+    maquinas = dados.get("maquinas", [])
+    if isinstance(maquinas, dict):
+        maquinas = list(maquinas.values())
+
+    # Ordena: piscando primeiro, depois VERDE, MANUTENÇÃO, SETUP, VERMELHO
+    prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "VERMELHO": 3}
+    maquinas.sort(key=lambda m: (
+        0 if m.get("piscando") else 1,
+        prioridade.get(m.get("estado_base", "VERMELHO"), 2),
+        m.get("maquina", "")
+    ))
+
+    # Cálculo da Carga Térmica
+    carga_vapor_atual = sum(
+        PESO_VAPOR.get(m.get("maquina", ""), PESO_VAPOR.get(m.get("codigo", ""), 2))
+        for m in maquinas
+        if m.get("estado_base") == "VERDE" and m.get("energia") == "VAPOR"
+    )
 
     col_gauge1, col_gauge2 = st.columns([1, 3])
     with col_gauge1:
@@ -212,27 +161,27 @@ def atualizar_conteudo():
     except Exception:
         agora = datetime.now()
 
-    maquinas_lista = list(df_estado_atual.iterrows())
-    qtd_piscando = int(df_estado_atual["Piscando"].sum())
+    qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
 
-    for i in range(0, len(maquinas_lista), 4):
+    for i in range(0, len(maquinas), 4):
         cols = st.columns(4)
         for j in range(4):
-            if i + j < len(maquinas_lista):
-                _, row = maquinas_lista[i + j]
-                maquina = row["Maquina"]
-                estado_base = row["Estado_Base"]
-                piscando = row["Piscando"]
-                energia = row["Energia"]
-                data_alteracao = row["Data_Calc"]
+            if i + j < len(maquinas):
+                m = maquinas[i + j]
+                maquina = m.get("maquina", "--")
+                estado_base = m.get("estado_base", "VERMELHO")
+                piscando = bool(m.get("piscando", False))
+                energia = m.get("energia", "VAPOR")
+                inicio_str = m.get("inicio", "")
 
-                if pd.notnull(data_alteracao):
-                    total_seg = max(0, int((agora - data_alteracao).total_seconds()))
+                try:
+                    dt_inicio = datetime.strptime(inicio_str, "%d/%m/%Y %H:%M:%S")
+                    total_seg = max(0, int((agora - dt_inicio).total_seconds()))
                     horas, resto = divmod(total_seg, 3600)
                     minutos, segundos = divmod(resto, 60)
                     tempo_str = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
-                    data_str = data_alteracao.strftime("%Y-%m-%d %H:%M")
-                else:
+                    data_str = dt_inicio.strftime("%Y-%m-%d %H:%M")
+                except Exception:
                     tempo_str = "Desconhecido"
                     data_str = "--"
 
@@ -266,7 +215,6 @@ def atualizar_conteudo():
                 with cols[j]:
                     st.markdown(card_html, unsafe_allow_html=True)
 
-    st.caption(f"Último registo lido da planilha: {ultima_linha_sheet} | Máquinas a piscar: {qtd_piscando}")
+    st.caption(f"🟢 Tempo Real ativo | Último pulso do monitor: {atualizado_em} | Máquinas a piscar: {qtd_piscando}")
 
-# Executar a função do painel
 atualizar_conteudo()
