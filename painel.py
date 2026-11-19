@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 st.set_page_config(page_title="Painel Central - Biomassa", page_icon="🔥", layout="wide")
 
 # 2. DADOS E LIGAÇÕES
+# Dica: para atualizar sem o cache de 5 min do Google, troque pelo link /export?format=csv da planilha
 URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vStHxFw9mRCwhbqLEs9N75ht75YMilTncgASFmVVHJMG9UmTSxuntFAPtAWcl7j-0t1cPLF8wmarryg/pub?output=csv"
 
 # Pesos de Vapor (nomes curtos e extensos)
@@ -117,7 +118,7 @@ st.markdown("""
     background-color: #800000;
 }
 
-/* Aplicado SOMENTE quando o monitor enviou *_PISCANDO */
+/* Aplicado SOMENTE quando a última linha da máquina termina com _PISCANDO */
 .piscando {
     animation: zsql-blink-borda 1s linear infinite;
 }
@@ -133,7 +134,8 @@ st.title("🔥 Central de Comando: Caldeira Biomassa")
 @st.fragment(run_every=10)
 def atualizar_conteudo():
     try:
-        url_sem_cache = f"{URL_CSV}&cb={int(time.time())}"
+        separador = "&" if "?" in URL_CSV else "?"
+        url_sem_cache = f"{URL_CSV}{separador}cb={int(time.time())}"
         df = pd.read_excel(url_sem_cache) if "xlsx" in URL_CSV else pd.read_csv(url_sem_cache)
         if df.empty:
             st.info("Ainda não existem registos na planilha.")
@@ -143,10 +145,17 @@ def atualizar_conteudo():
         df["Maquina"] = df["Maquina"].astype(str).str.strip()
         df["Estado"] = df["Estado"].astype(str).str.strip().str.upper()
         df["Energia"] = df["Energia"].astype(str).str.strip().str.upper()
-        df["Data_Calc"] = pd.to_datetime(df["Data"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
         df["Estado_Base"] = df["Estado"].str.replace("_PISCANDO", "", regex=False)
-        df = df.sort_values("Data_Calc", na_position="first")
 
+        # Converte datas de forma tolerante sem alterar a ordem original do Google Forms
+        df["Data_Calc"] = pd.to_datetime(df["Data"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+        faltantes = df["Data_Calc"].isna()
+        if faltantes.any():
+            df.loc[faltantes, "Data_Calc"] = pd.to_datetime(df.loc[faltantes, "Data"], dayfirst=True, errors="coerce")
+
+        ultima_linha_sheet = str(df.iloc[-1]["Data"])
+
+        # Mantém a ordem exata do Google Forms: iloc[-1] é SEMPRE o último registo enviado
         registos = []
         for maq, grupo in df.groupby("Maquina", sort=False):
             ultima = grupo.iloc[-1]
@@ -157,7 +166,8 @@ def atualizar_conteudo():
             data_inicio = ultima["Data_Calc"]
             for idx in range(len(grupo) - 1, -1, -1):
                 if grupo.iloc[idx]["Estado_Base"] == estado_base:
-                    data_inicio = grupo.iloc[idx]["Data_Calc"]
+                    if pd.notnull(grupo.iloc[idx]["Data_Calc"]):
+                        data_inicio = grupo.iloc[idx]["Data_Calc"]
                 else:
                     break
 
@@ -203,6 +213,7 @@ def atualizar_conteudo():
         agora = datetime.now()
 
     maquinas_lista = list(df_estado_atual.iterrows())
+    qtd_piscando = int(df_estado_atual["Piscando"].sum())
 
     for i in range(0, len(maquinas_lista), 4):
         cols = st.columns(4)
@@ -254,6 +265,8 @@ def atualizar_conteudo():
 
                 with cols[j]:
                     st.markdown(card_html, unsafe_allow_html=True)
+
+    st.caption(f"Último registo lido da planilha: {ultima_linha_sheet} | Máquinas a piscar: {qtd_piscando}")
 
 # Executar a função do painel
 atualizar_conteudo()
