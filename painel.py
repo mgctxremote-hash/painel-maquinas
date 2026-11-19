@@ -241,7 +241,7 @@ def atualizar_conteudo():
     with col_gauge2:
         st.progress(min(carga_vapor_atual / 30.0, 1.0))
         if carga_vapor_atual > 20:
-            st.warning("⚠️ ALERTA: Pico de Carga Detetado. Prepare a fornalha!")
+            st.warning("⚠️ ALERTA: Carga Alta. Prepare a fornalha.")
 
     st.markdown("---")
     st.subheader("Estado das Máquinas (Tempo Real)")
