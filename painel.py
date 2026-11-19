@@ -140,25 +140,24 @@ def atualizar_conteudo():
             return
 
         df.columns = ["Timestamp", "Maquina", "Estado", "Energia", "Data"]
-        df['Maquina'] = df['Maquina'].astype(str).str.strip()
-        df['Estado'] = df['Estado'].astype(str).str.strip().str.upper()
-        df['Energia'] = df['Energia'].astype(str).str.strip().str.upper()
-        df['Data_Calc'] = pd.to_datetime(df['Data'], format='%d/%m/%Y %H:%M:%S', errors='coerce')
-        df['Estado_Base'] = df['Estado'].str.replace('_PISCANDO', '', regex=False)
-        df = df.sort_values('Data_Calc', na_position='first')
+        df["Maquina"] = df["Maquina"].astype(str).str.strip()
+        df["Estado"] = df["Estado"].astype(str).str.strip().str.upper()
+        df["Energia"] = df["Energia"].astype(str).str.strip().str.upper()
+        df["Data_Calc"] = pd.to_datetime(df["Data"], format="%d/%m/%Y %H:%M:%S", errors="coerce")
+        df["Estado_Base"] = df["Estado"].str.replace("_PISCANDO", "", regex=False)
+        df = df.sort_values("Data_Calc", na_position="first")
 
-        # Monta o estado atual preservando o início da cor base (sem zerar o tempo ao parar de piscar)
         registos = []
-        for maq, grupo in df.groupby('Maquina', sort=False):
+        for maq, grupo in df.groupby("Maquina", sort=False):
             ultima = grupo.iloc[-1]
-            estado_atual = ultima['Estado']
-            estado_base = ultima['Estado_Base']
-            piscando = estado_atual.endswith('_PISCANDO')
+            estado_atual = ultima["Estado"]
+            estado_base = ultima["Estado_Base"]
+            piscando = estado_atual.endswith("_PISCANDO")
 
-            data_inicio = ultima['Data_Calc']
+            data_inicio = ultima["Data_Calc"]
             for idx in range(len(grupo) - 1, -1, -1):
-                if grupo.iloc[idx]['Estado_Base'] == estado_base:
-                    data_inicio = grupo.iloc[idx]['Data_Calc']
+                if grupo.iloc[idx]["Estado_Base"] == estado_base:
+                    data_inicio = grupo.iloc[idx]["Data_Calc"]
                 else:
                     break
 
@@ -167,16 +166,16 @@ def atualizar_conteudo():
                 "Estado": estado_atual,
                 "Estado_Base": estado_base,
                 "Piscando": piscando,
-                "Energia": ultima['Energia'],
+                "Energia": ultima["Energia"],
                 "Data_Calc": data_inicio
             })
 
         df_estado_atual = pd.DataFrame(registos)
 
         prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "AMARELO": 2, "VERMELHO": 3}
-        df_estado_atual['Ordem_Pisca'] = df_estado_atual['Piscando'].map({True: 0, False: 1})
-        df_estado_atual['Ordem_Cor'] = df_estado_atual['Estado_Base'].map(prioridade).fillna(2)
-        df_estado_atual = df_estado_atual.sort_values(['Ordem_Pisca', 'Ordem_Cor', 'Maquina'])
+        df_estado_atual["Ordem_Pisca"] = df_estado_atual["Piscando"].map({True: 0, False: 1})
+        df_estado_atual["Ordem_Cor"] = df_estado_atual["Estado_Base"].map(prioridade).fillna(2)
+        df_estado_atual = df_estado_atual.sort_values(["Ordem_Pisca", "Ordem_Cor", "Maquina"])
     except Exception:
         st.warning("A sincronizar com a nuvem...")
         return
@@ -184,8 +183,8 @@ def atualizar_conteudo():
     # Cálculo da Carga Térmica (conta VERDE e VERDE_PISCANDO)
     carga_vapor_atual = 0
     for _, row in df_estado_atual.iterrows():
-        if row['Estado_Base'] == "VERDE" and row['Energia'] == "VAPOR":
-            carga_vapor_atual += PESO_VAPOR.get(row['Maquina'], 2)
+        if row["Estado_Base"] == "VERDE" and row["Energia"] == "VAPOR":
+            carga_vapor_atual += PESO_VAPOR.get(row["Maquina"], 2)
 
     col_gauge1, col_gauge2 = st.columns([1, 3])
     with col_gauge1:
@@ -210,18 +209,18 @@ def atualizar_conteudo():
         for j in range(4):
             if i + j < len(maquinas_lista):
                 _, row = maquinas_lista[i + j]
-                maquina = row['Maquina']
-                estado_base = row['Estado_Base']
-                piscando = row['Piscando']
-                energia = row['Energia']
-                data_alteracao = row['Data_Calc']
+                maquina = row["Maquina"]
+                estado_base = row["Estado_Base"]
+                piscando = row["Piscando"]
+                energia = row["Energia"]
+                data_alteracao = row["Data_Calc"]
 
                 if pd.notnull(data_alteracao):
                     total_seg = max(0, int((agora - data_alteracao).total_seconds()))
                     horas, resto = divmod(total_seg, 3600)
                     minutos, segundos = divmod(resto, 60)
                     tempo_str = f"{horas:02d}h {minutos:02d}m {segundos:02d}s"
-                    data_str = data_alteracao.strftime('%Y-%m-%d %H:%M')
+                    data_str = data_alteracao.strftime("%Y-%m-%d %H:%M")
                 else:
                     tempo_str = "Desconhecido"
                     data_str = "--"
@@ -239,4 +238,22 @@ def atualizar_conteudo():
                     classe_cor = "zsql-setup"
                     faixa_html = '<div class="zsql-faixa-laranja"></div>'
 
-                classe_pisca =
+                classe_pisca = "piscando" if piscando else ""
+
+                card_html = (
+                    f'<div class="zsql-card {classe_cor} {classe_pisca}">'
+                    f'<div class="zsql-header">{maquina}</div>'
+                    f'{faixa_html}'
+                    f'<div class="zsql-body">'
+                    f'<div class="zsql-data">{data_str}</div>'
+                    f'<div class="zsql-energia">{energia}</div>'
+                    f'<div class="zsql-tempo">⏱️ {tempo_str}</div>'
+                    f'</div>'
+                    f'</div>'
+                )
+
+                with cols[j]:
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+# Executar a função do painel
+atualizar_conteudo()
