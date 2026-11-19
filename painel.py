@@ -112,7 +112,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🔥 Central de Comando: Caldeira Biomassa")
+st.title("Central de Comando: Caldeira Biomassa")
 
 @st.cache_data(ttl=2, show_spinner=False)
 def buscar_dados_firebase():
