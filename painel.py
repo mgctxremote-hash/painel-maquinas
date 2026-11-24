@@ -13,11 +13,23 @@ FIREBASE_URL = "https://caldeiras-99-default-rtdb.europe-west1.firebasedatabase.
 CAMINHO_FIREBASE = f"{FIREBASE_URL}/painel_biomassa.json"
 TZ_LISBOA = ZoneInfo("Europe/Lisbon")
 
+# ==============================================================================
+# MÁQUINAS OCULTAS NO PAINEL
+# Adicione ou remova aqui o código do zsql02 (ex: "RAM 2") ou o nome extenso
+# (ex: "Râmula 2"). Tudo o que estiver nesta lista some do painel e do cálculo.
+# ==============================================================================
+MAQUINAS_OCULTAS = [
+    "KUST 1", "Kuster 1",
+    "KUST 3", "Kuster 3",
+    "TERM 3", "Termofixação 3",
+    "M.L.6",
+]
+
+OCULTAS_NORMALIZADAS = {nome.strip().upper() for nome in MAQUINAS_OCULTAS}
+
 # Pesos de Vapor
 PESO_VAPOR = {
     "LP5": 5, "Secador 33": 5, "SEC 33": 5, "PAD 2": 4,
-    "Kuster 1": 3, "KUST 1": 3, "Kuster 3": 3, "KUST 3": 3,
-    "Termofixação 3": 3, "TERM 3": 3, "M.L.6": 4,
     "Escovadeira 1": 4, "ESC 1": 4,
     "Enrolador 1": 1, "ENR 1": 1, "Enrolador 2": 1, "ENR 2": 1,
     "Calandra": 2, "CALAND": 2
@@ -220,7 +232,13 @@ def atualizar_conteudo():
     if isinstance(maquinas, dict):
         maquinas = list(maquinas.values())
 
-    maquinas = list(maquinas)
+    # Filtra as máquinas ocultas antes de ordenar, calcular carga e desenhar a grelha
+    maquinas = [
+        m for m in maquinas
+        if str(m.get("codigo", "")).strip().upper() not in OCULTAS_NORMALIZADAS
+        and str(m.get("maquina", "")).strip().upper() not in OCULTAS_NORMALIZADAS
+    ]
+
     prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "VERMELHO": 3}
     maquinas.sort(key=lambda m: (
         0 if m.get("piscando") else 1,
