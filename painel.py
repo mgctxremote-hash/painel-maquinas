@@ -22,7 +22,7 @@ MAQUINAS_OCULTAS = [
     "KUST 1", "Kuster 1",
     "KUST 3", "Kuster 3",
     "TERM 3", "Termofixação 3",
-    "M.L.6",
+    "M.L.6","Rotativa Preparação"
 ]
 
 OCULTAS_NORMALIZADAS = {nome.strip().upper() for nome in MAQUINAS_OCULTAS}
@@ -42,7 +42,7 @@ st.markdown("""
     0%, 100% { opacity: 1; }
     50% { opacity: 0.15; }
 }
-
+Rotativa Preparação
 @keyframes zsql-blink-borda {
     0%, 100% { box-shadow: 0 0 0 2px #8c8c8c; }
     50% { box-shadow: 0 0 14px 3px #FFD700; }
