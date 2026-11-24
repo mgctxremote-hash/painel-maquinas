@@ -1,4 +1,5 @@
 import time
+import unicodedata
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
@@ -14,18 +15,46 @@ CAMINHO_FIREBASE = f"{FIREBASE_URL}/painel_biomassa.json"
 TZ_LISBOA = ZoneInfo("Europe/Lisbon")
 
 # ==============================================================================
-# MÁQUINAS OCULTAS NO PAINEL
-# Adicione ou remova aqui o código do zsql02 (ex: "RAM 2") ou o nome extenso
-# (ex: "Râmula 2"). Tudo o que estiver nesta lista some do painel e do cálculo.
+# FILTRO DE MÁQUINAS OCULTAS (IGNORA ACENTOS E MAIÚSCULAS)
 # ==============================================================================
+# 1) Nomes ou códigos exatos que você quer esconder do painel:
 MAQUINAS_OCULTAS = [
-    "KUST 1", "Kuster 1",
-    "KUST 3", "Kuster 3",
-    "TERM 3", "Termofixação 3",
-    "M.L.6","Rotativa Preparação" "Rotativa Tinturaria"
+    "ROT-PREP", "Rotativa Preparação",
+    "ROT-TINT", "Rotativa Tinturaria",
+    "ROT-ACAB", "Rotativa Acabamentos",
+    "Termofixação 3",
+    
 ]
 
-OCULTAS_NORMALIZADAS = {nome.strip().upper() for nome in MAQUINAS_OCULTAS}
+# 2) Qualquer máquina que contenha estes termos no nome ou código também é ocultada:
+TERMOS_OCULTOS = [
+    "ROTATIVA",
+    "ROT-",
+]
+
+def normalizar_texto(texto: str) -> str:
+    texto = str(texto or "").strip().upper()
+    sem_acento = "".join(
+        ch for ch in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(ch) != "Mn"
+    )
+    return " ".join(sem_acento.split())
+
+OCULTAS_NORMALIZADAS = {normalizar_texto(nome) for nome in MAQUINAS_OCULTAS}
+TERMOS_OCULTOS_NORMALIZADOS = [normalizar_texto(termo) for termo in TERMOS_OCULTOS]
+
+def deve_ocultar(m: dict) -> bool:
+    codigo = normalizar_texto(m.get("codigo", ""))
+    nome = normalizar_texto(m.get("maquina", ""))
+
+    if codigo in OCULTAS_NORMALIZADAS or nome in OCULTAS_NORMALIZADAS:
+        return True
+
+    for termo in TERMOS_OCULTOS_NORMALIZADOS:
+        if termo and (termo in codigo or termo in nome):
+            return True
+
+    return False
 
 # Pesos de Vapor
 PESO_VAPOR = {
@@ -42,7 +71,7 @@ st.markdown("""
     0%, 100% { opacity: 1; }
     50% { opacity: 0.15; }
 }
-Rotativa Preparação
+
 @keyframes zsql-blink-borda {
     0%, 100% { box-shadow: 0 0 0 2px #8c8c8c; }
     50% { box-shadow: 0 0 14px 3px #FFD700; }
@@ -232,12 +261,8 @@ def atualizar_conteudo():
     if isinstance(maquinas, dict):
         maquinas = list(maquinas.values())
 
-    # Filtra as máquinas ocultas antes de ordenar, calcular carga e desenhar a grelha
-    maquinas = [
-        m for m in maquinas
-        if str(m.get("codigo", "")).strip().upper() not in OCULTAS_NORMALIZADAS
-        and str(m.get("maquina", "")).strip().upper() not in OCULTAS_NORMALIZADAS
-    ]
+    # Remove as máquinas ocultas antes de ordenar, calcular carga e desenhar a grelha
+    maquinas = [m for m in maquinas if not deve_ocultar(m)]
 
     prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "VERMELHO": 3}
     maquinas.sort(key=lambda m: (
