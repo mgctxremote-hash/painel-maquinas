@@ -1,3 +1,4 @@
+import re
 import time
 import unicodedata
 import requests
@@ -34,7 +35,6 @@ TERMOS_OCULTOS = [
 
 # ==============================================================================
 # NOMES COMPLETOS PARA EXIBIÇÃO NO DISPLAY (CÓDIGO DO ZSQL02 -> NOME COMPLETO)
-# Edite aqui qualquer nome se quiser ajustar exatamente ao padrão interno
 # ==============================================================================
 NOMES_COMPLETOS = {
     # Acabamentos
@@ -137,6 +137,11 @@ def normalizar_texto(texto: str) -> str:
     )
     return " ".join(sem_acento.split())
 
+def chave_natural(texto: str):
+    """Ordena números de forma natural (ex: Râmula 2 antes de Râmula 10)."""
+    partes = re.split(r"(\d+)", normalizar_texto(texto))
+    return [int(p) if p.isdigit() else p for p in partes]
+
 OCULTAS_NORMALIZADAS = {normalizar_texto(nome) for nome in MAQUINAS_OCULTAS}
 TERMOS_OCULTOS_NORMALIZADOS = [normalizar_texto(termo) for termo in TERMOS_OCULTOS]
 
@@ -149,6 +154,9 @@ MAPA_SETOR = {}
 for nome_setor, lista_maqs in SETORES_MAQUINAS.items():
     for item_maq in lista_maqs:
         MAPA_SETOR[normalizar_texto(item_maq)] = nome_setor
+
+def obter_estado_base(m: dict) -> str:
+    return normalizar_texto(m.get("estado_base", "VERMELHO"))
 
 def obter_nome_completo(m: dict) -> str:
     codigo_norm = normalizar_texto(m.get("codigo", ""))
@@ -188,6 +196,29 @@ def identificar_setor(m: dict) -> str:
         or "Outros"
     )
 
+def chave_ordenacao_maquina(m: dict):
+    """
+    Garante dentro de cada setor:
+      1º Online (VERDE) -> piscando primeiro, depois fixas
+      2º Manutenção (AMARELO_MANUTENCAO) -> piscando primeiro
+      3º Setup (AMARELO_SETUP) -> piscando primeiro
+      4º Paradas (VERMELHO) -> piscando primeiro, depois fixas
+    """
+    estado = obter_estado_base(m)
+    piscando = bool(m.get("piscando", False))
+    prioridade_estado = {
+        "VERDE": 0,
+        "AMARELO_MANUTENCAO": 1,
+        "AMARELO_SETUP": 2,
+        "VERMELHO": 3,
+    }.get(estado, 2)
+
+    return (
+        prioridade_estado,
+        0 if piscando else 1,
+        chave_natural(obter_nome_completo(m)),
+    )
+
 # Pesos de Vapor
 PESO_VAPOR = {
     "LP5": 5, "Secador 33": 5, "SEC 33": 5, "PAD 2": 4,
@@ -208,7 +239,7 @@ def obter_peso_vapor(m: dict) -> int:
             return MAPA_PESO_VAPOR[chave]
     return 2
 
-# 3. ESTILOS VISUAIS (ZSQL02 + SETORES + PISCAR EM TEMPO REAL)
+# 3. ESTILOS VISUAIS (ZSQL02 + SETORES + DESTAQUE ONLINE + PISCAR)
 st.markdown("""
 <style>
 @keyframes zsql-blink-header {
@@ -225,12 +256,18 @@ st.markdown("""
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     border-left: 5px solid #4682B4;
     background-color: rgba(70, 130, 180, 0.14);
-    padding: 7px 14px;
+    padding: 8px 14px;
     border-radius: 4px;
-    margin: 18px 0 12px 0;
+    margin: 20px 0 12px 0;
     font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.zsql-setor-ativo {
+    border-left-color: #00A83F;
 }
 
 .zsql-setor-nome {
@@ -241,27 +278,60 @@ st.markdown("""
     text-transform: uppercase;
 }
 
-.zsql-setor-resumo {
-    font-size: 12px;
-    font-weight: 600;
-    opacity: 0.85;
+.zsql-setor-badges {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.zsql-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.3px;
+}
+
+.zsql-badge-online {
+    background-color: rgba(0, 168, 63, 0.22);
+    color: #00E676;
+    border: 1px solid rgba(0, 168, 63, 0.55);
+}
+
+.zsql-badge-alerta {
+    background-color: rgba(255, 193, 7, 0.20);
+    color: #FFD54F;
+    border: 1px solid rgba(255, 193, 7, 0.50);
+}
+
+.zsql-badge-parada {
+    background-color: rgba(150, 150, 150, 0.18);
+    color: #BDBDBD;
+    border: 1px solid rgba(150, 150, 150, 0.40);
+}
+
+.zsql-badge-piscar {
+    background-color: rgba(255, 215, 0, 0.25);
+    color: #FFD700;
+    border: 1px solid #FFD700;
 }
 
 .zsql-card {
     border: 1px solid #8c8c8c;
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
     font-family: "Segoe UI", Arial, sans-serif;
     text-align: center;
     margin-bottom: 14px;
-    min-height: 112px;
+    min-height: 118px;
 }
 
 .zsql-header {
     color: #FFFFFF;
     font-weight: 700;
     font-size: 14px;
-    padding: 5px 8px;
+    padding: 6px 8px;
     letter-spacing: 0.3px;
 }
 
@@ -278,21 +348,56 @@ st.markdown("""
 }
 
 .zsql-body {
-    padding: 8px 8px 10px 8px;
+    padding: 7px 8px 10px 8px;
     color: #0D2359;
+}
+
+.zsql-status-pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 1px 7px;
+    border-radius: 10px;
+    margin-bottom: 5px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.pill-online {
+    background-color: #D1F2DC;
+    color: #006B27;
+    border: 1px solid #009938;
+}
+
+.pill-manut {
+    background-color: #FFF3B0;
+    color: #7A4F01;
+    border: 1px solid #D4A000;
+}
+
+.pill-setup {
+    background-color: #FFE0B2;
+    color: #8A4300;
+    border: 1px solid #E67E00;
+}
+
+.pill-parada {
+    background-color: #C9C9C9;
+    color: #5C1A1A;
+    border: 1px solid #9E9E9E;
 }
 
 .zsql-data {
     font-size: 12px;
     font-weight: 700;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
 }
 
 .zsql-energia {
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
 }
 
 .zsql-tempo {
@@ -301,19 +406,41 @@ st.markdown("""
     color: #1F356B;
 }
 
-.zsql-verde { background-color: #EAF8FC; }
-.zsql-verde .zsql-header { background-color: #007A00; }
+/* ONLINE (VERDE) - Destaque principal */
+.zsql-verde {
+    background-color: #EAF8FC;
+    border: 2px solid #009938;
+    box-shadow: 0 3px 10px rgba(0, 153, 56, 0.22);
+}
+.zsql-verde .zsql-header {
+    background-color: #007A00;
+}
 
-.zsql-vermelho { background-color: #D9D9D9; }
-.zsql-vermelho .zsql-header { background-color: #800000; }
+/* PARADA (VERMELHO) - Mais discreta quando não está a piscar */
+.zsql-vermelho {
+    background-color: #D9D9D9;
+    opacity: 0.72;
+}
+.zsql-vermelho .zsql-header {
+    background-color: #800000;
+}
 
-.zsql-setup { background-color: #D9D9D9; }
-.zsql-setup .zsql-header { background-color: #800000; }
+.zsql-setup {
+    background-color: #E2E2E2;
+}
+.zsql-setup .zsql-header {
+    background-color: #800000;
+}
 
-.zsql-manutencao { background-color: #FFFDE7; }
-.zsql-manutencao .zsql-header { background-color: #800000; }
+.zsql-manutencao {
+    background-color: #FFFDE7;
+}
+.zsql-manutencao .zsql-header {
+    background-color: #800000;
+}
 
 .piscando {
+    opacity: 1 !important;
     animation: zsql-blink-borda 1s linear infinite;
 }
 .piscando .zsql-header {
@@ -412,7 +539,7 @@ def render_barra_relogio_zsql():
 
 def montar_card_html(m: dict, agora: datetime) -> str:
     maquina = obter_nome_completo(m)
-    estado_base = m.get("estado_base", "VERMELHO")
+    estado_base = obter_estado_base(m)
     piscando = bool(m.get("piscando", False))
     energia = m.get("energia", "VAPOR")
     inicio_str = m.get("inicio", "")
@@ -437,15 +564,19 @@ def montar_card_html(m: dict, agora: datetime) -> str:
     if estado_base == "VERDE":
         classe_cor = "zsql-verde"
         faixa_html = ""
+        pill_html = '<div class="zsql-status-pill pill-online">● Online</div>'
     elif estado_base == "VERMELHO":
         classe_cor = "zsql-vermelho"
         faixa_html = ""
+        pill_html = '<div class="zsql-status-pill pill-parada">● Parada</div>'
     elif estado_base == "AMARELO_MANUTENCAO":
         classe_cor = "zsql-manutencao"
         faixa_html = '<div class="zsql-faixa-amarela"></div>'
+        pill_html = '<div class="zsql-status-pill pill-manut">● Manutenção</div>'
     else:
         classe_cor = "zsql-setup"
         faixa_html = '<div class="zsql-faixa-laranja"></div>'
+        pill_html = '<div class="zsql-status-pill pill-setup">● Setup</div>'
 
     classe_pisca = "piscando" if piscando else ""
 
@@ -454,6 +585,7 @@ def montar_card_html(m: dict, agora: datetime) -> str:
         f'<div class="zsql-header">{maquina}</div>'
         f'{faixa_html}'
         f'<div class="zsql-body">'
+        f'{pill_html}'
         f'<div class="zsql-data">{data_str}</div>'
         f'<div class="zsql-energia">{energia}</div>'
         f'<div class="zsql-tempo">⏱️ {tempo_str}</div>'
@@ -484,14 +616,17 @@ def atualizar_conteudo():
     # Remove as máquinas ocultas antes de agrupar e calcular carga
     maquinas = [m for m in maquinas if not deve_ocultar(m)]
 
-    # Cálculo da Carga Térmica
+    # Métricas gerais
+    total_online = sum(1 for m in maquinas if obter_estado_base(m) == "VERDE")
     carga_vapor_atual = sum(
         obter_peso_vapor(m)
         for m in maquinas
-        if m.get("estado_base") == "VERDE" and m.get("energia") == "VAPOR"
+        if obter_estado_base(m) == "VERDE" and normalizar_texto(m.get("energia", "")) == "VAPOR"
     )
 
-    col_gauge1, col_gauge2 = st.columns([1, 3])
+    col_online, col_gauge1, col_gauge2 = st.columns([1, 1, 2.5])
+    with col_online:
+        st.metric(label="Máquinas Online", value=f"{total_online} / {len(maquinas)}")
     with col_gauge1:
         st.metric(label="Carga Térmica (Vapor)", value=f"{carga_vapor_atual} Pts")
     with col_gauge2:
@@ -500,37 +635,40 @@ def atualizar_conteudo():
             st.warning("⚠️ ALERTA: Carga Alta. Prepare a fornalha.")
 
     st.markdown("---")
-    st.subheader("Estado das Máquinas (Tempo Real)")
+    st.subheader("Estado das Máquinas por Setor (Online Primeiro)")
 
-    # Agrupa as máquinas por setor
+    # Agrupa as máquinas mantendo cada uma no seu setor
     ordem_setores = ["Preparação", "Acabamentos", "Tinturaria", "Outros"]
     grupos = {setor: [] for setor in ordem_setores}
     for m in maquinas:
         grupos[identificar_setor(m)].append(m)
-
-    prioridade = {"VERDE": 0, "AMARELO_MANUTENCAO": 1, "AMARELO_SETUP": 2, "VERMELHO": 3}
 
     for setor_nome in ordem_setores:
         lista_setor = grupos[setor_nome]
         if not lista_setor:
             continue
 
-        lista_setor.sort(key=lambda m: (
-            0 if m.get("piscando") else 1,
-            prioridade.get(m.get("estado_base", "VERMELHO"), 2),
-            obter_nome_completo(m)
-        ))
+        # Ordena estritamente com ONLINE (VERDE) primeiro dentro do setor
+        lista_setor.sort(key=chave_ordenacao_maquina)
 
-        em_operacao = sum(1 for m in lista_setor if m.get("estado_base") == "VERDE")
-        a_piscar_setor = sum(1 for m in lista_setor if m.get("piscando"))
-        resumo_setor = f"Em operação: {em_operacao}/{len(lista_setor)}"
-        if a_piscar_setor > 0:
-            resumo_setor += f" | 🔔 A piscar: {a_piscar_setor}"
+        qtd_online = sum(1 for m in lista_setor if obter_estado_base(m) == "VERDE")
+        qtd_alerta = sum(1 for m in lista_setor if obter_estado_base(m) in ("AMARELO_MANUTENCAO", "AMARELO_SETUP"))
+        qtd_parada = sum(1 for m in lista_setor if obter_estado_base(m) == "VERMELHO")
+        qtd_piscar_setor = sum(1 for m in lista_setor if m.get("piscando"))
+
+        badges_html = [f'<span class="zsql-badge zsql-badge-online">🟢 {qtd_online} Online</span>']
+        if qtd_alerta > 0:
+            badges_html.append(f'<span class="zsql-badge zsql-badge-alerta">⚠️ {qtd_alerta} Manut./Setup</span>')
+        badges_html.append(f'<span class="zsql-badge zsql-badge-parada">🔴 {qtd_parada} Paradas</span>')
+        if qtd_piscar_setor > 0:
+            badges_html.append(f'<span class="zsql-badge zsql-badge-piscar">🔔 {qtd_piscar_setor} A piscar</span>')
+
+        classe_setor_ativo = "zsql-setor-ativo" if qtd_online > 0 else ""
 
         st.markdown(
-            f'<div class="zsql-setor-titulo">'
+            f'<div class="zsql-setor-titulo {classe_setor_ativo}">'
             f'<span class="zsql-setor-nome">{setor_nome}</span>'
-            f'<span class="zsql-setor-resumo">{resumo_setor}</span>'
+            f'<div class="zsql-setor-badges">{"".join(badges_html)}</div>'
             f'</div>',
             unsafe_allow_html=True
         )
@@ -543,7 +681,7 @@ def atualizar_conteudo():
                         st.markdown(montar_card_html(lista_setor[i + j], agora), unsafe_allow_html=True)
 
     qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
-    st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas a piscar: {qtd_piscando}")
+    st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas online: {total_online} | A piscar: {qtd_piscando}")
 
 atualizar_conteudo()
 render_barra_relogio_zsql()
