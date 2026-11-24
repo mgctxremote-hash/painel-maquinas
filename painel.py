@@ -33,6 +33,59 @@ TERMOS_OCULTOS = [
 ]
 
 # ==============================================================================
+# NOMES COMPLETOS PARA EXIBIÇÃO NO DISPLAY (CÓDIGO DO ZSQL02 -> NOME COMPLETO)
+# Edite aqui qualquer nome se quiser ajustar exatamente ao padrão interno
+# ==============================================================================
+NOMES_COMPLETOS = {
+    # Acabamentos
+    "RAM 1": "Râmula 1",
+    "RAM 2": "Râmula 2",
+    "RAM 3": "Râmula 3",
+    "RAM 5": "Râmula 5",
+    "RAM.5": "Râmula 5",
+    "RAM 6": "Râmula 6",
+    "RAM.6": "Râmula 6",
+    "RAM 7": "Râmula 7",
+    "RAM.7": "Râmula 7",
+    "SANF 2": "Sanfor 2",
+    "SANF 3": "Sanfor 3",
+    "CALAND": "Calandra",
+    "ESM.6": "Esmeriladora 6",
+    "ESM 6": "Esmeriladora 6",
+    "ESM.7": "Esmeriladora 7",
+    "ESM 7": "Esmeriladora 7",
+    "POLI 2": "Polimerizadora 2",
+    "BIC 5": "BIC 5",
+    "THIES 1": "Thies 1",
+    "THIES 2": "Thies 2",
+
+    # Preparação
+    "SEC 33": "Secador 33",
+    "GAS 1": "Gaseadeira 1",
+    "GAS 2": "Gaseadeira 2",
+    "ENR 1": "Enrolador 1",
+    "ENR 2": "Enrolador 2",
+    "OPER.EXT": "Operações Externas",
+    "LP2I": "LP2I",
+    "LP2II": "LP2II",
+    "LP3I": "LP3I",
+    "LP3II": "LP3II",
+    "LP5": "LP5",
+    "ROT-PREP": "Rotativa Preparação",
+
+    # Tinturaria
+    "ESC 1": "Escovadeira 1",
+    "ESC 2": "Escovadeira 2",
+    "ENR-TINT": "Enrolador Tinturaria",
+    "PAD 2": "PAD 2",
+    "TERM 3": "Termofixação 3",
+    "KUST 1": "Kuster 1",
+    "KUST 3": "Kuster 3",
+    "M.L.6": "M.L.6",
+    "ROT-TINT": "Rotativa Tinturaria",
+}
+
+# ==============================================================================
 # DEFINIÇÃO DOS SETORES (NA ORDEM EM QUE APARECEM NO PAINEL)
 # ==============================================================================
 SETORES_MAQUINAS = {
@@ -43,7 +96,7 @@ SETORES_MAQUINAS = {
         "GAS 2", "Gaseadeira 2",
         "ENR 1", "Enrolador 1",
         "ENR 2", "Enrolador 2",
-        "OPER.EXT",
+        "OPER.EXT", "Operações Externas",
         "ROT-PREP", "Rotativa Preparação",
     ],
     "Acabamentos": [
@@ -53,16 +106,20 @@ SETORES_MAQUINAS = {
         "RAM 5", "RAM.5", "Râmula 5",
         "RAM 6", "RAM.6", "Râmula 6",
         "RAM 7", "RAM.7", "Râmula 7",
-        "ESM.6", "ESM.7",
-        "BIC 5", "POLI 2",
-        "SANF 2", "SANF 3",
+        "ESM.6", "ESM 6", "Esmeriladora 6",
+        "ESM.7", "ESM 7", "Esmeriladora 7",
+        "BIC 5",
+        "POLI 2", "Polimerizadora 2",
+        "SANF 2", "Sanfor 2",
+        "SANF 3", "Sanfor 3",
         "CALAND", "Calandra",
-        "THIES 1", "THIES 2",
+        "THIES 1", "Thies 1",
+        "THIES 2", "Thies 2",
     ],
     "Tinturaria": [
         "ESC 1", "Escovadeira 1",
         "ESC 2", "Escovadeira 2",
-        "ENR-TINT",
+        "ENR-TINT", "Enrolador Tinturaria",
         "M.L.6",
         "PAD 2",
         "TERM 3", "Termofixação 3",
@@ -83,20 +140,39 @@ def normalizar_texto(texto: str) -> str:
 OCULTAS_NORMALIZADAS = {normalizar_texto(nome) for nome in MAQUINAS_OCULTAS}
 TERMOS_OCULTOS_NORMALIZADOS = [normalizar_texto(termo) for termo in TERMOS_OCULTOS]
 
+MAPA_NOMES_COMPLETOS = {
+    normalizar_texto(chave): valor
+    for chave, valor in NOMES_COMPLETOS.items()
+}
+
 MAPA_SETOR = {}
 for nome_setor, lista_maqs in SETORES_MAQUINAS.items():
     for item_maq in lista_maqs:
         MAPA_SETOR[normalizar_texto(item_maq)] = nome_setor
 
+def obter_nome_completo(m: dict) -> str:
+    codigo_norm = normalizar_texto(m.get("codigo", ""))
+    maquina_norm = normalizar_texto(m.get("maquina", ""))
+    if codigo_norm in MAPA_NOMES_COMPLETOS:
+        return MAPA_NOMES_COMPLETOS[codigo_norm]
+    if maquina_norm in MAPA_NOMES_COMPLETOS:
+        return MAPA_NOMES_COMPLETOS[maquina_norm]
+    return str(m.get("maquina") or m.get("codigo") or "--").strip()
+
 def deve_ocultar(m: dict) -> bool:
     codigo = normalizar_texto(m.get("codigo", ""))
     nome = normalizar_texto(m.get("maquina", ""))
+    nome_completo = normalizar_texto(obter_nome_completo(m))
 
-    if codigo in OCULTAS_NORMALIZADAS or nome in OCULTAS_NORMALIZADAS:
+    if (
+        codigo in OCULTAS_NORMALIZADAS
+        or nome in OCULTAS_NORMALIZADAS
+        or nome_completo in OCULTAS_NORMALIZADAS
+    ):
         return True
 
     for termo in TERMOS_OCULTOS_NORMALIZADOS:
-        if termo and (termo in codigo or termo in nome):
+        if termo and (termo in codigo or termo in nome or termo in nome_completo):
             return True
 
     return False
@@ -104,7 +180,13 @@ def deve_ocultar(m: dict) -> bool:
 def identificar_setor(m: dict) -> str:
     codigo = normalizar_texto(m.get("codigo", ""))
     nome = normalizar_texto(m.get("maquina", ""))
-    return MAPA_SETOR.get(codigo) or MAPA_SETOR.get(nome) or "Outros"
+    nome_completo = normalizar_texto(obter_nome_completo(m))
+    return (
+        MAPA_SETOR.get(codigo)
+        or MAPA_SETOR.get(nome)
+        or MAPA_SETOR.get(nome_completo)
+        or "Outros"
+    )
 
 # Pesos de Vapor
 PESO_VAPOR = {
@@ -113,6 +195,18 @@ PESO_VAPOR = {
     "Enrolador 1": 1, "ENR 1": 1, "Enrolador 2": 1, "ENR 2": 1,
     "Calandra": 2, "CALAND": 2
 }
+
+MAPA_PESO_VAPOR = {
+    normalizar_texto(chave): valor
+    for chave, valor in PESO_VAPOR.items()
+}
+
+def obter_peso_vapor(m: dict) -> int:
+    for campo in (obter_nome_completo(m), m.get("maquina", ""), m.get("codigo", "")):
+        chave = normalizar_texto(campo)
+        if chave in MAPA_PESO_VAPOR:
+            return MAPA_PESO_VAPOR[chave]
+    return 2
 
 # 3. ESTILOS VISUAIS (ZSQL02 + SETORES + PISCAR EM TEMPO REAL)
 st.markdown("""
@@ -168,8 +262,7 @@ st.markdown("""
     font-weight: 700;
     font-size: 14px;
     padding: 5px 8px;
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .zsql-faixa-amarela {
@@ -318,7 +411,7 @@ def render_barra_relogio_zsql():
     components.html(html_relogio, height=42)
 
 def montar_card_html(m: dict, agora: datetime) -> str:
-    maquina = m.get("maquina", "--")
+    maquina = obter_nome_completo(m)
     estado_base = m.get("estado_base", "VERMELHO")
     piscando = bool(m.get("piscando", False))
     energia = m.get("energia", "VAPOR")
@@ -393,7 +486,7 @@ def atualizar_conteudo():
 
     # Cálculo da Carga Térmica
     carga_vapor_atual = sum(
-        PESO_VAPOR.get(m.get("maquina", ""), PESO_VAPOR.get(m.get("codigo", ""), 2))
+        obter_peso_vapor(m)
         for m in maquinas
         if m.get("estado_base") == "VERDE" and m.get("energia") == "VAPOR"
     )
@@ -425,7 +518,7 @@ def atualizar_conteudo():
         lista_setor.sort(key=lambda m: (
             0 if m.get("piscando") else 1,
             prioridade.get(m.get("estado_base", "VERMELHO"), 2),
-            m.get("maquina", "")
+            obter_nome_completo(m)
         ))
 
         em_operacao = sum(1 for m in lista_setor if m.get("estado_base") == "VERDE")
