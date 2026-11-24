@@ -22,7 +22,7 @@ MAQUINAS_OCULTAS = [
     "KUST 1", "Kuster 1",
     "KUST 3", "Kuster 3",
     "TERM 3", "Termofixação 3",
-    "M.L.6","Rotativa Preparação"
+    "M.L.6","Rotativa Preparação" "Rotativa Tinturaria"
 ]
 
 OCULTAS_NORMALIZADAS = {nome.strip().upper() for nome in MAQUINAS_OCULTAS}
