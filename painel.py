@@ -803,4 +803,79 @@ def atualizar_conteudo():
     carga_vapor_atual = sum(
         obter_peso_vapor(m)
         for m in maquinas
-        if obter_estado_base(m) == "VERDE" and normalizar_texto(m.get("energia
+        if obter_estado_base(m) == "VERDE" and normalizar_texto(m.get("energia", "")) == "VAPOR"
+    )
+    pct_vapor = min(int((carga_vapor_atual / 30.0) * 100), 100)
+    cor_barra = "#FF5252" if carga_vapor_atual > 20 else ("#FFB74D" if carga_vapor_atual >= 14 else "#00E676")
+    alerta_html = (
+        '<span class="zsql-alerta-inline">⚠️ CARGA ALTA — PREPARE A FORNALHA</span>'
+        if carga_vapor_atual > 20 else ""
+    )
+
+    st.markdown(
+        f'<div class="zsql-topbar">'
+        f'<div class="zsql-topbar-title">🔥 Central de Comando: Caldeira Biomassa</div>'
+        f'<div class="zsql-topbar-stats">'
+        f'<div class="zsql-stat-chip zsql-stat-chip-verde">🟢 Ligadas: {total_ligadas} / {len(maquinas)}</div>'
+        f'<div class="zsql-stat-chip">'
+        f'<div class="zsql-vapor-wrap">'
+        f'<span>Vapor: {carga_vapor_atual} Pts</span>'
+        f'<div class="zsql-vapor-bar"><div class="zsql-vapor-fill" style="width:{pct_vapor}%; background-color:{cor_barra};"></div></div>'
+        f'</div>'
+        f'</div>'
+        f'{alerta_html}'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    # Agrupa as máquinas mantendo cada uma no seu setor
+    grupos = {setor: [] for setor in ORDEM_SETORES_COLUNAS}
+    grupos["Outros"] = []
+    for m in maquinas:
+        grupos[identificar_setor(m)].append(m)
+
+    # 3 COLUNAS LADO A LADO (DE CIMA PARA BAIXO, ARRANQUE/LIGADAS NO TOPO)
+    colunas_setores = st.columns(len(ORDEM_SETORES_COLUNAS), gap="medium")
+
+    for idx, setor_nome in enumerate(ORDEM_SETORES_COLUNAS):
+        lista_setor = grupos[setor_nome]
+        lista_setor.sort(key=chave_ordenacao_maquina)
+
+        ligadas_setor = [m for m in lista_setor if obter_estado_base(m) == "VERDE"]
+        restantes_setor = [m for m in lista_setor if obter_estado_base(m) != "VERDE"]
+
+        with colunas_setores[idx]:
+            blocos_html = [montar_header_setor_html(setor_nome, lista_setor)]
+
+            if ligadas_setor:
+                for m in ligadas_setor:
+                    blocos_html.append(montar_card_html(m, agora))
+            else:
+                blocos_html.append('<div class="zsql-vazio-ligada">Nenhuma máquina ligada neste setor</div>')
+
+            if restantes_setor:
+                if ligadas_setor:
+                    blocos_html.append('<div class="zsql-divisor-coluna">Manutenção / Setup / Paradas</div>')
+                for m in restantes_setor:
+                    blocos_html.append(montar_card_html(m, agora))
+
+            st.markdown("".join(blocos_html), unsafe_allow_html=True)
+
+    # Se surgir alguma máquina não mapeada em nenhum dos 3 setores, exibe abaixo
+    if grupos["Outros"]:
+        lista_outros = grupos["Outros"]
+        lista_outros.sort(key=chave_ordenacao_maquina)
+        st.markdown(montar_header_setor_html("Outros", lista_outros), unsafe_allow_html=True)
+        for i in range(0, len(lista_outros), 3):
+            cols_outros = st.columns(3, gap="medium")
+            for j in range(3):
+                if i + j < len(lista_outros):
+                    with cols_outros[j]:
+                        st.markdown(montar_card_html(lista_outros[i + j], agora), unsafe_allow_html=True)
+
+    qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
+    st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas ligadas: {total_ligadas} | A piscar: {qtd_piscando}")
+
+atualizar_conteudo()
+render_barra_relogio_zsql()
