@@ -86,8 +86,10 @@ NOMES_COMPLETOS = {
 }
 
 # ==============================================================================
-# DEFINIÇÃO DOS SETORES (NA ORDEM EM QUE APARECEM NO PAINEL)
+# DEFINIÇÃO DAS 3 COLUNAS DE SETORES (ESQUERDA -> CENTRO -> DIREITA)
 # ==============================================================================
+ORDEM_SETORES_COLUNAS = ["Preparação", "Acabamentos", "Tinturaria"]
+
 SETORES_MAQUINAS = {
     "Preparação": [
         "LP3I", "LP3II", "LP2I", "LP2II", "LP5",
@@ -198,7 +200,7 @@ def identificar_setor(m: dict) -> str:
 
 def chave_ordenacao_maquina(m: dict):
     """
-    Garante dentro de cada setor:
+    Ordem de cima para baixo dentro de cada coluna de setor:
       1º Online (VERDE) -> piscando primeiro, depois fixas
       2º Manutenção (AMARELO_MANUTENCAO) -> piscando primeiro
       3º Setup (AMARELO_SETUP) -> piscando primeiro
@@ -239,7 +241,7 @@ def obter_peso_vapor(m: dict) -> int:
             return MAPA_PESO_VAPOR[chave]
     return 2
 
-# 3. ESTILOS VISUAIS (ZSQL02 + SETORES + DESTAQUE ONLINE + PISCAR)
+# 3. ESTILOS VISUAIS (3 COLUNAS VERTICAIS + ZSQL02 + ONLINE EM CIMA)
 st.markdown("""
 <style>
 @keyframes zsql-blink-header {
@@ -252,45 +254,43 @@ st.markdown("""
     50% { box-shadow: 0 0 14px 3px #FFD700; }
 }
 
-.zsql-setor-titulo {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    border-left: 5px solid #4682B4;
+.zsql-coluna-header {
+    border-top: 4px solid #4682B4;
     background-color: rgba(70, 130, 180, 0.14);
-    padding: 8px 14px;
-    border-radius: 4px;
-    margin: 20px 0 12px 0;
+    padding: 10px 12px;
+    border-radius: 5px;
+    margin-bottom: 10px;
     font-family: "Segoe UI", Arial, sans-serif;
 }
 
-.zsql-setor-ativo {
-    border-left-color: #00A83F;
+.zsql-coluna-header-ativo {
+    border-top-color: #00A83F;
 }
 
 .zsql-setor-nome {
-    color: #4682B4;
+    color: #5DA9E9;
     font-size: 16px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.8px;
     text-transform: uppercase;
+    margin-bottom: 6px;
+    text-align: center;
 }
 
 .zsql-setor-badges {
     display: flex;
+    justify-content: center;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
 }
 
 .zsql-badge {
     font-size: 11px;
     font-weight: 700;
-    padding: 3px 8px;
+    padding: 2px 8px;
     border-radius: 999px;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
 }
 
 .zsql-badge-online {
@@ -317,106 +317,140 @@ st.markdown("""
     border: 1px solid #FFD700;
 }
 
+.zsql-divisor-coluna {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 10px 0;
+    color: #9E9E9E;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+}
+
+.zsql-divisor-coluna::before,
+.zsql-divisor-coluna::after {
+    content: "";
+    flex: 1;
+    border-top: 1px dashed #555555;
+}
+
+.zsql-vazio-online {
+    text-align: center;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 12px;
+    color: #9E9E9E;
+    padding: 8px;
+    border: 1px dashed #444444;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
 .zsql-card {
     border: 1px solid #8c8c8c;
     border-radius: 4px;
     overflow: hidden;
     font-family: "Segoe UI", Arial, sans-serif;
-    text-align: center;
-    margin-bottom: 14px;
-    min-height: 118px;
+    margin-bottom: 10px;
 }
 
 .zsql-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
     color: #FFFFFF;
     font-weight: 700;
     font-size: 14px;
-    padding: 6px 8px;
-    letter-spacing: 0.3px;
+    padding: 6px 10px;
+    letter-spacing: 0.2px;
+}
+
+.zsql-header-pill {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 1px 7px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+}
+
+.hpill-online {
+    background-color: #00E676;
+    color: #003314;
+}
+
+.hpill-manut {
+    background-color: #FFEA00;
+    color: #4D3800;
+}
+
+.hpill-setup {
+    background-color: #FF9800;
+    color: #FFFFFF;
+}
+
+.hpill-parada {
+    background-color: rgba(255, 255, 255, 0.20);
+    color: #F0F0F0;
 }
 
 .zsql-faixa-amarela {
-    height: 5px;
+    height: 4px;
     width: 100%;
     background-color: #FFEA00;
 }
 
 .zsql-faixa-laranja {
-    height: 5px;
+    height: 4px;
     width: 100%;
     background-color: #FF9800;
 }
 
 .zsql-body {
-    padding: 7px 8px 10px 8px;
+    padding: 7px 10px 8px 10px;
     color: #0D2359;
+    text-align: center;
 }
 
-.zsql-status-pill {
-    display: inline-block;
-    font-size: 10px;
-    font-weight: 800;
-    padding: 1px 7px;
-    border-radius: 10px;
-    margin-bottom: 5px;
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
-}
-
-.pill-online {
-    background-color: #D1F2DC;
-    color: #006B27;
-    border: 1px solid #009938;
-}
-
-.pill-manut {
-    background-color: #FFF3B0;
-    color: #7A4F01;
-    border: 1px solid #D4A000;
-}
-
-.pill-setup {
-    background-color: #FFE0B2;
-    color: #8A4300;
-    border: 1px solid #E67E00;
-}
-
-.pill-parada {
-    background-color: #C9C9C9;
-    color: #5C1A1A;
-    border: 1px solid #9E9E9E;
-}
-
-.zsql-data {
+.zsql-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     font-size: 12px;
     font-weight: 700;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
 }
 
 .zsql-energia {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 800;
     text-transform: uppercase;
-    margin-bottom: 5px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background-color: rgba(13, 35, 89, 0.10);
 }
 
 .zsql-tempo {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     color: #1F356B;
 }
 
-/* ONLINE (VERDE) - Destaque principal */
+/* ONLINE (VERDE) - Destaque no topo da coluna */
 .zsql-verde {
     background-color: #EAF8FC;
     border: 2px solid #009938;
-    box-shadow: 0 3px 10px rgba(0, 153, 56, 0.22);
+    box-shadow: 0 3px 10px rgba(0, 153, 56, 0.24);
 }
 .zsql-verde .zsql-header {
     background-color: #007A00;
 }
 
-/* PARADA (VERMELHO) - Mais discreta quando não está a piscar */
+/* PARADA (VERMELHO) - Discreta abaixo das online */
 .zsql-vermelho {
     background-color: #D9D9D9;
     opacity: 0.72;
@@ -564,32 +598,52 @@ def montar_card_html(m: dict, agora: datetime) -> str:
     if estado_base == "VERDE":
         classe_cor = "zsql-verde"
         faixa_html = ""
-        pill_html = '<div class="zsql-status-pill pill-online">● Online</div>'
+        pill_html = '<span class="zsql-header-pill hpill-online">● Online</span>'
     elif estado_base == "VERMELHO":
         classe_cor = "zsql-vermelho"
         faixa_html = ""
-        pill_html = '<div class="zsql-status-pill pill-parada">● Parada</div>'
+        pill_html = '<span class="zsql-header-pill hpill-parada">Parada</span>'
     elif estado_base == "AMARELO_MANUTENCAO":
         classe_cor = "zsql-manutencao"
         faixa_html = '<div class="zsql-faixa-amarela"></div>'
-        pill_html = '<div class="zsql-status-pill pill-manut">● Manutenção</div>'
+        pill_html = '<span class="zsql-header-pill hpill-manut">Manut.</span>'
     else:
         classe_cor = "zsql-setup"
         faixa_html = '<div class="zsql-faixa-laranja"></div>'
-        pill_html = '<div class="zsql-status-pill pill-setup">● Setup</div>'
+        pill_html = '<span class="zsql-header-pill hpill-setup">Setup</span>'
 
     classe_pisca = "piscando" if piscando else ""
 
     return (
         f'<div class="zsql-card {classe_cor} {classe_pisca}">'
-        f'<div class="zsql-header">{maquina}</div>'
+        f'<div class="zsql-header"><span>{maquina}</span>{pill_html}</div>'
         f'{faixa_html}'
         f'<div class="zsql-body">'
-        f'{pill_html}'
-        f'<div class="zsql-data">{data_str}</div>'
-        f'<div class="zsql-energia">{energia}</div>'
+        f'<div class="zsql-meta"><span>{data_str}</span><span class="zsql-energia">{energia}</span></div>'
         f'<div class="zsql-tempo">⏱️ {tempo_str}</div>'
         f'</div>'
+        f'</div>'
+    )
+
+def montar_header_setor_html(setor_nome: str, lista_setor: list) -> str:
+    qtd_online = sum(1 for m in lista_setor if obter_estado_base(m) == "VERDE")
+    qtd_alerta = sum(1 for m in lista_setor if obter_estado_base(m) in ("AMARELO_MANUTENCAO", "AMARELO_SETUP"))
+    qtd_parada = sum(1 for m in lista_setor if obter_estado_base(m) == "VERMELHO")
+    qtd_piscar = sum(1 for m in lista_setor if m.get("piscando"))
+
+    badges = [f'<span class="zsql-badge zsql-badge-online">🟢 {qtd_online} Online</span>']
+    if qtd_alerta > 0:
+        badges.append(f'<span class="zsql-badge zsql-badge-alerta">⚠️ {qtd_alerta} Manut./Setup</span>')
+    badges.append(f'<span class="zsql-badge zsql-badge-parada">🔴 {qtd_parada} Paradas</span>')
+    if qtd_piscar > 0:
+        badges.append(f'<span class="zsql-badge zsql-badge-piscar">🔔 {qtd_piscar} A piscar</span>')
+
+    classe_ativo = "zsql-coluna-header-ativo" if qtd_online > 0 else ""
+
+    return (
+        f'<div class="zsql-coluna-header {classe_ativo}">'
+        f'<div class="zsql-setor-nome">{setor_nome}</div>'
+        f'<div class="zsql-setor-badges">{"".join(badges)}</div>'
         f'</div>'
     )
 
@@ -616,7 +670,7 @@ def atualizar_conteudo():
     # Remove as máquinas ocultas antes de agrupar e calcular carga
     maquinas = [m for m in maquinas if not deve_ocultar(m)]
 
-    # Métricas gerais
+    # Métricas gerais no topo
     total_online = sum(1 for m in maquinas if obter_estado_base(m) == "VERDE")
     carga_vapor_atual = sum(
         obter_peso_vapor(m)
@@ -635,50 +689,51 @@ def atualizar_conteudo():
             st.warning("⚠️ ALERTA: Carga Alta. Prepare a fornalha.")
 
     st.markdown("---")
-    st.subheader("Estado das Máquinas por Setor (Online Primeiro)")
 
     # Agrupa as máquinas mantendo cada uma no seu setor
-    ordem_setores = ["Preparação", "Acabamentos", "Tinturaria", "Outros"]
-    grupos = {setor: [] for setor in ordem_setores}
+    grupos = {setor: [] for setor in ORDEM_SETORES_COLUNAS}
+    grupos["Outros"] = []
     for m in maquinas:
         grupos[identificar_setor(m)].append(m)
 
-    for setor_nome in ordem_setores:
-        lista_setor = grupos[setor_nome]
-        if not lista_setor:
-            continue
+    # 3 COLUNAS LADO A LADO (DE CIMA PARA BAIXO, ONLINE NO TOPO DE CADA COLUNA)
+    colunas_setores = st.columns(len(ORDEM_SETORES_COLUNAS), gap="medium")
 
-        # Ordena estritamente com ONLINE (VERDE) primeiro dentro do setor
+    for idx, setor_nome in enumerate(ORDEM_SETORES_COLUNAS):
+        lista_setor = grupos[setor_nome]
         lista_setor.sort(key=chave_ordenacao_maquina)
 
-        qtd_online = sum(1 for m in lista_setor if obter_estado_base(m) == "VERDE")
-        qtd_alerta = sum(1 for m in lista_setor if obter_estado_base(m) in ("AMARELO_MANUTENCAO", "AMARELO_SETUP"))
-        qtd_parada = sum(1 for m in lista_setor if obter_estado_base(m) == "VERMELHO")
-        qtd_piscar_setor = sum(1 for m in lista_setor if m.get("piscando"))
+        online_setor = [m for m in lista_setor if obter_estado_base(m) == "VERDE"]
+        restantes_setor = [m for m in lista_setor if obter_estado_base(m) != "VERDE"]
 
-        badges_html = [f'<span class="zsql-badge zsql-badge-online">🟢 {qtd_online} Online</span>']
-        if qtd_alerta > 0:
-            badges_html.append(f'<span class="zsql-badge zsql-badge-alerta">⚠️ {qtd_alerta} Manut./Setup</span>')
-        badges_html.append(f'<span class="zsql-badge zsql-badge-parada">🔴 {qtd_parada} Paradas</span>')
-        if qtd_piscar_setor > 0:
-            badges_html.append(f'<span class="zsql-badge zsql-badge-piscar">🔔 {qtd_piscar_setor} A piscar</span>')
+        with colunas_setores[idx]:
+            blocos_html = [montar_header_setor_html(setor_nome, lista_setor)]
 
-        classe_setor_ativo = "zsql-setor-ativo" if qtd_online > 0 else ""
+            if online_setor:
+                for m in online_setor:
+                    blocos_html.append(montar_card_html(m, agora))
+            else:
+                blocos_html.append('<div class="zsql-vazio-online">Nenhuma máquina online neste setor</div>')
 
-        st.markdown(
-            f'<div class="zsql-setor-titulo {classe_setor_ativo}">'
-            f'<span class="zsql-setor-nome">{setor_nome}</span>'
-            f'<div class="zsql-setor-badges">{"".join(badges_html)}</div>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+            if restantes_setor:
+                if online_setor:
+                    blocos_html.append('<div class="zsql-divisor-coluna">Manutenção / Setup / Paradas</div>')
+                for m in restantes_setor:
+                    blocos_html.append(montar_card_html(m, agora))
 
-        for i in range(0, len(lista_setor), 4):
-            cols = st.columns(4)
-            for j in range(4):
-                if i + j < len(lista_setor):
-                    with cols[j]:
-                        st.markdown(montar_card_html(lista_setor[i + j], agora), unsafe_allow_html=True)
+            st.markdown("".join(blocos_html), unsafe_allow_html=True)
+
+    # Se surgir alguma máquina não mapeada em nenhum dos 3 setores, exibe abaixo
+    if grupos["Outros"]:
+        lista_outros = grupos["Outros"]
+        lista_outros.sort(key=chave_ordenacao_maquina)
+        st.markdown(montar_header_setor_html("Outros", lista_outros), unsafe_allow_html=True)
+        for i in range(0, len(lista_outros), 3):
+            cols_outros = st.columns(3, gap="medium")
+            for j in range(3):
+                if i + j < len(lista_outros):
+                    with cols_outros[j]:
+                        st.markdown(montar_card_html(lista_outros[i + j], agora), unsafe_allow_html=True)
 
     qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
     st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas online: {total_online} | A piscar: {qtd_piscando}")
