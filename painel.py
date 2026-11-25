@@ -25,12 +25,16 @@ MAQUINAS_OCULTAS = [
     "KUST 1", "Kuster 1",
     "KUST 3", "Kuster 3",
     "TERM 3", "Termofixação 3",
-    "M.L.6",
+    "M.L.6", "ENR 1","Enrolador 1",
+    "ENR 2", "Enrolador 2",
+    "ENR-TINT", "Enrolador Tinturaria",
 ]
 
 TERMOS_OCULTOS = [
     "ROTATIVA",
-    "ROT-",
+    "ROT-","ENR 1","Enrolador 1",
+    "ENR 2", "Enrolador 2",
+    "ENR-TINT", "Enrolador Tinturaria",
 ]
 
 # ==============================================================================
