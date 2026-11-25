@@ -246,8 +246,8 @@ st.markdown("""
 <style>
 /* Reduz o espaço vazio superior padrão do Streamlit para caber mais máquinas */
 .block-container {
-    padding-top: 1.4rem !important;
-    padding-bottom: 0.8rem !important;
+    padding-top: 3.8 !important;
+    padding-bottom: 0.8 !important;
     padding-left: 1.5rem !important;
     padding-right: 1.5rem !important;
 }
