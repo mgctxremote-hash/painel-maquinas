@@ -201,10 +201,10 @@ def identificar_setor(m: dict) -> str:
 def chave_ordenacao_maquina(m: dict):
     """
     Ordem de cima para baixo dentro de cada coluna de setor:
-      1º Online (VERDE) -> piscando primeiro, depois fixas
-      2º Manutenção (AMARELO_MANUTENCAO) -> piscando primeiro
-      3º Setup (AMARELO_SETUP) -> piscando primeiro
-      4º Paradas (VERMELHO) -> piscando primeiro, depois fixas
+      1º Arranque (VERDE a piscar) e Ligada (VERDE fixa)
+      2º Manutenção (amarelo)
+      3º Setup (laranja)
+      4º Parando (VERMELHO a piscar) e Parada (VERMELHO fixa)
     """
     estado = obter_estado_base(m)
     piscando = bool(m.get("piscando", False))
@@ -241,9 +241,17 @@ def obter_peso_vapor(m: dict) -> int:
             return MAPA_PESO_VAPOR[chave]
     return 2
 
-# 3. ESTILOS VISUAIS (3 COLUNAS VERTICAIS + ZSQL02 + ONLINE EM CIMA)
+# 3. ESTILOS VISUAIS (CABEÇALHO COMPACTO + CARDS MAIORES + ZSQL02)
 st.markdown("""
 <style>
+/* Reduz o espaço vazio superior padrão do Streamlit para caber mais máquinas */
+.block-container {
+    padding-top: 1.4rem !important;
+    padding-bottom: 0.8rem !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+}
+
 @keyframes zsql-blink-header {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.15; }
@@ -251,13 +259,94 @@ st.markdown("""
 
 @keyframes zsql-blink-borda {
     0%, 100% { box-shadow: 0 0 0 2px #8c8c8c; }
-    50% { box-shadow: 0 0 14px 3px #FFD700; }
+    50% { box-shadow: 0 0 16px 4px #FFD700; }
 }
 
-.zsql-coluna-header {
-    border-top: 4px solid #4682B4;
+/* Cabeçalho superior compacto */
+.zsql-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(140, 140, 140, 0.30);
+    border-radius: 6px;
+    padding: 8px 14px;
+    margin-bottom: 12px;
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.zsql-topbar-title {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    margin: 0;
+}
+
+.zsql-topbar-stats {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.zsql-stat-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
     background-color: rgba(70, 130, 180, 0.14);
-    padding: 10px 12px;
+    border: 1px solid rgba(70, 130, 180, 0.35);
+    padding: 4px 10px;
+    border-radius: 5px;
+}
+
+.zsql-stat-chip-verde {
+    background-color: rgba(0, 168, 63, 0.18);
+    border-color: rgba(0, 168, 63, 0.50);
+    color: #00E676;
+}
+
+.zsql-vapor-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.zsql-vapor-bar {
+    width: 140px;
+    height: 10px;
+    background-color: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.zsql-vapor-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.zsql-alerta-inline {
+    background-color: rgba(255, 152, 0, 0.22);
+    color: #FFB74D;
+    border: 1px solid #FF9800;
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+/* Cabeçalho compacto de cada coluna de setor */
+.zsql-coluna-header {
+    border-top: 3px solid #4682B4;
+    background-color: rgba(70, 130, 180, 0.14);
+    padding: 6px 10px;
     border-radius: 5px;
     margin-bottom: 10px;
     font-family: "Segoe UI", Arial, sans-serif;
@@ -269,11 +358,11 @@ st.markdown("""
 
 .zsql-setor-nome {
     color: #5DA9E9;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 800;
-    letter-spacing: 0.8px;
+    letter-spacing: 0.7px;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     text-align: center;
 }
 
@@ -286,23 +375,29 @@ st.markdown("""
 }
 
 .zsql-badge {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 1px 7px;
     border-radius: 999px;
     letter-spacing: 0.2px;
 }
 
-.zsql-badge-online {
+.zsql-badge-ligada {
     background-color: rgba(0, 168, 63, 0.22);
     color: #00E676;
     border: 1px solid rgba(0, 168, 63, 0.55);
 }
 
-.zsql-badge-alerta {
-    background-color: rgba(255, 193, 7, 0.20);
-    color: #FFD54F;
-    border: 1px solid rgba(255, 193, 7, 0.50);
+.zsql-badge-manut {
+    background-color: rgba(255, 234, 0, 0.18);
+    color: #FFEA00;
+    border: 1px solid rgba(255, 234, 0, 0.50);
+}
+
+.zsql-badge-setup {
+    background-color: rgba(255, 152, 0, 0.20);
+    color: #FFB74D;
+    border: 1px solid rgba(255, 152, 0, 0.55);
 }
 
 .zsql-badge-parada {
@@ -321,7 +416,7 @@ st.markdown("""
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 10px 0 10px 0;
+    margin: 12px 0 10px 0;
     color: #9E9E9E;
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 10px;
@@ -337,50 +432,69 @@ st.markdown("""
     border-top: 1px dashed #555555;
 }
 
-.zsql-vazio-online {
+.zsql-vazio-ligada {
     text-align: center;
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 12px;
     color: #9E9E9E;
-    padding: 8px;
+    padding: 10px;
     border: 1px dashed #444444;
-    border-radius: 4px;
+    border-radius: 5px;
     margin-bottom: 10px;
 }
 
+/* Cards de máquina maiores e mais fáceis de ler à distância */
 .zsql-card {
     border: 1px solid #8c8c8c;
-    border-radius: 4px;
+    border-radius: 5px;
     overflow: hidden;
     font-family: "Segoe UI", Arial, sans-serif;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    min-height: 118px;
 }
 
 .zsql-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     color: #FFFFFF;
-    font-weight: 700;
-    font-size: 14px;
-    padding: 6px 10px;
+    font-weight: 800;
+    font-size: 16px;
+    padding: 9px 12px;
     letter-spacing: 0.2px;
 }
 
 .zsql-header-pill {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 800;
-    padding: 1px 7px;
+    padding: 2px 9px;
     border-radius: 999px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
     white-space: nowrap;
 }
 
-.hpill-online {
+.hpill-ligada {
     background-color: #00E676;
     color: #003314;
+}
+
+.hpill-arranque {
+    background-color: #FFEA00;
+    color: #004D1A;
+    box-shadow: 0 0 6px rgba(255, 234, 0, 0.75);
+}
+
+.hpill-parando {
+    background-color: #FF5252;
+    color: #FFFFFF;
+    border: 1px solid #FFD700;
+}
+
+.hpill-parada {
+    background-color: rgba(255, 255, 255, 0.22);
+    color: #F0F0F0;
 }
 
 .hpill-manut {
@@ -393,25 +507,20 @@ st.markdown("""
     color: #FFFFFF;
 }
 
-.hpill-parada {
-    background-color: rgba(255, 255, 255, 0.20);
-    color: #F0F0F0;
-}
-
 .zsql-faixa-amarela {
-    height: 4px;
+    height: 6px;
     width: 100%;
     background-color: #FFEA00;
 }
 
 .zsql-faixa-laranja {
-    height: 4px;
+    height: 6px;
     width: 100%;
     background-color: #FF9800;
 }
 
 .zsql-body {
-    padding: 7px 10px 8px 10px;
+    padding: 12px 14px 13px 14px;
     color: #0D2359;
     text-align: center;
 }
@@ -420,54 +529,58 @@ st.markdown("""
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
 
 .zsql-energia {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 800;
     text-transform: uppercase;
-    padding: 1px 6px;
-    border-radius: 3px;
-    background-color: rgba(13, 35, 89, 0.10);
+    padding: 2px 8px;
+    border-radius: 4px;
+    background-color: rgba(13, 35, 89, 0.12);
 }
 
 .zsql-tempo {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 800;
     color: #1F356B;
 }
 
-/* ONLINE (VERDE) - Destaque no topo da coluna */
+/* LIGADA / ARRANQUE (VERDE) */
 .zsql-verde {
     background-color: #EAF8FC;
     border: 2px solid #009938;
-    box-shadow: 0 3px 10px rgba(0, 153, 56, 0.24);
+    box-shadow: 0 3px 12px rgba(0, 153, 56, 0.24);
 }
 .zsql-verde .zsql-header {
     background-color: #007A00;
 }
 
-/* PARADA (VERMELHO) - Discreta abaixo das online */
+/* PARADA / PARANDO (VERMELHO) */
 .zsql-vermelho {
     background-color: #D9D9D9;
-    opacity: 0.72;
+    opacity: 0.76;
 }
 .zsql-vermelho .zsql-header {
     background-color: #800000;
 }
 
+/* SETUP (LARANJA) */
 .zsql-setup {
-    background-color: #E2E2E2;
+    background-color: #FFF3E0;
+    border: 1.5px solid #FF9800;
 }
 .zsql-setup .zsql-header {
     background-color: #800000;
 }
 
+/* MANUTENÇÃO (AMARELO) */
 .zsql-manutencao {
     background-color: #FFFDE7;
+    border: 1.5px solid #E6C200;
 }
 .zsql-manutencao .zsql-header {
     background-color: #800000;
@@ -482,8 +595,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-
-st.title("Central de Comando: Caldeira Biomassa")
 
 @st.cache_data(ttl=2, show_spinner=False)
 def buscar_dados_firebase():
@@ -598,15 +709,21 @@ def montar_card_html(m: dict, agora: datetime) -> str:
     if estado_base == "VERDE":
         classe_cor = "zsql-verde"
         faixa_html = ""
-        pill_html = '<span class="zsql-header-pill hpill-online">● Online</span>'
+        if piscando:
+            pill_html = '<span class="zsql-header-pill hpill-arranque">▲ Arranque</span>'
+        else:
+            pill_html = '<span class="zsql-header-pill hpill-ligada">● Ligada</span>'
     elif estado_base == "VERMELHO":
         classe_cor = "zsql-vermelho"
         faixa_html = ""
-        pill_html = '<span class="zsql-header-pill hpill-parada">Parada</span>'
+        if piscando:
+            pill_html = '<span class="zsql-header-pill hpill-parando">▼ Parando</span>'
+        else:
+            pill_html = '<span class="zsql-header-pill hpill-parada">Parada</span>'
     elif estado_base == "AMARELO_MANUTENCAO":
         classe_cor = "zsql-manutencao"
         faixa_html = '<div class="zsql-faixa-amarela"></div>'
-        pill_html = '<span class="zsql-header-pill hpill-manut">Manut.</span>'
+        pill_html = '<span class="zsql-header-pill hpill-manut">Manutenção</span>'
     else:
         classe_cor = "zsql-setup"
         faixa_html = '<div class="zsql-faixa-laranja"></div>'
@@ -626,19 +743,22 @@ def montar_card_html(m: dict, agora: datetime) -> str:
     )
 
 def montar_header_setor_html(setor_nome: str, lista_setor: list) -> str:
-    qtd_online = sum(1 for m in lista_setor if obter_estado_base(m) == "VERDE")
-    qtd_alerta = sum(1 for m in lista_setor if obter_estado_base(m) in ("AMARELO_MANUTENCAO", "AMARELO_SETUP"))
+    qtd_ligadas = sum(1 for m in lista_setor if obter_estado_base(m) == "VERDE")
+    qtd_manut = sum(1 for m in lista_setor if obter_estado_base(m) == "AMARELO_MANUTENCAO")
+    qtd_setup = sum(1 for m in lista_setor if obter_estado_base(m) == "AMARELO_SETUP")
     qtd_parada = sum(1 for m in lista_setor if obter_estado_base(m) == "VERMELHO")
     qtd_piscar = sum(1 for m in lista_setor if m.get("piscando"))
 
-    badges = [f'<span class="zsql-badge zsql-badge-online">🟢 {qtd_online} Online</span>']
-    if qtd_alerta > 0:
-        badges.append(f'<span class="zsql-badge zsql-badge-alerta">⚠️ {qtd_alerta} Manut./Setup</span>')
+    badges = [f'<span class="zsql-badge zsql-badge-ligada">🟢 {qtd_ligadas} Ligadas</span>']
+    if qtd_manut > 0:
+        badges.append(f'<span class="zsql-badge zsql-badge-manut">🟡 {qtd_manut} Manut.</span>')
+    if qtd_setup > 0:
+        badges.append(f'<span class="zsql-badge zsql-badge-setup">🟠 {qtd_setup} Setup</span>')
     badges.append(f'<span class="zsql-badge zsql-badge-parada">🔴 {qtd_parada} Paradas</span>')
     if qtd_piscar > 0:
-        badges.append(f'<span class="zsql-badge zsql-badge-piscar">🔔 {qtd_piscar} A piscar</span>')
+        badges.append(f'<span class="zsql-badge zsql-badge-piscar">🔔 {qtd_piscar}</span>')
 
-    classe_ativo = "zsql-coluna-header-ativo" if qtd_online > 0 else ""
+    classe_ativo = "zsql-coluna-header-ativo" if qtd_ligadas > 0 else ""
 
     return (
         f'<div class="zsql-coluna-header {classe_ativo}">'
@@ -653,9 +773,17 @@ def atualizar_conteudo():
     try:
         dados = buscar_dados_firebase()
         if not dados or not dados.get("maquinas"):
+            st.markdown(
+                '<div class="zsql-topbar"><div class="zsql-topbar-title">🔥 Central de Comando: Caldeira Biomassa</div></div>',
+                unsafe_allow_html=True
+            )
             st.info("Aguardando o primeiro envio do monitor local...")
             return
     except Exception:
+        st.markdown(
+            '<div class="zsql-topbar"><div class="zsql-topbar-title">🔥 Central de Comando: Caldeira Biomassa</div></div>',
+            unsafe_allow_html=True
+        )
         st.warning("A sincronizar com o servidor em tempo real...")
         return
 
@@ -670,73 +798,9 @@ def atualizar_conteudo():
     # Remove as máquinas ocultas antes de agrupar e calcular carga
     maquinas = [m for m in maquinas if not deve_ocultar(m)]
 
-    # Métricas gerais no topo
-    total_online = sum(1 for m in maquinas if obter_estado_base(m) == "VERDE")
+    # Métricas gerais na barra superior compacta
+    total_ligadas = sum(1 for m in maquinas if obter_estado_base(m) == "VERDE")
     carga_vapor_atual = sum(
         obter_peso_vapor(m)
         for m in maquinas
-        if obter_estado_base(m) == "VERDE" and normalizar_texto(m.get("energia", "")) == "VAPOR"
-    )
-
-    col_online, col_gauge1, col_gauge2 = st.columns([1, 1, 2.5])
-    with col_online:
-        st.metric(label="Máquinas Online", value=f"{total_online} / {len(maquinas)}")
-    with col_gauge1:
-        st.metric(label="Carga Térmica (Vapor)", value=f"{carga_vapor_atual} Pts")
-    with col_gauge2:
-        st.progress(min(carga_vapor_atual / 30.0, 1.0))
-        if carga_vapor_atual > 20:
-            st.warning("⚠️ ALERTA: Carga Alta. Prepare a fornalha.")
-
-    st.markdown("---")
-
-    # Agrupa as máquinas mantendo cada uma no seu setor
-    grupos = {setor: [] for setor in ORDEM_SETORES_COLUNAS}
-    grupos["Outros"] = []
-    for m in maquinas:
-        grupos[identificar_setor(m)].append(m)
-
-    # 3 COLUNAS LADO A LADO (DE CIMA PARA BAIXO, ONLINE NO TOPO DE CADA COLUNA)
-    colunas_setores = st.columns(len(ORDEM_SETORES_COLUNAS), gap="medium")
-
-    for idx, setor_nome in enumerate(ORDEM_SETORES_COLUNAS):
-        lista_setor = grupos[setor_nome]
-        lista_setor.sort(key=chave_ordenacao_maquina)
-
-        online_setor = [m for m in lista_setor if obter_estado_base(m) == "VERDE"]
-        restantes_setor = [m for m in lista_setor if obter_estado_base(m) != "VERDE"]
-
-        with colunas_setores[idx]:
-            blocos_html = [montar_header_setor_html(setor_nome, lista_setor)]
-
-            if online_setor:
-                for m in online_setor:
-                    blocos_html.append(montar_card_html(m, agora))
-            else:
-                blocos_html.append('<div class="zsql-vazio-online">Nenhuma máquina online neste setor</div>')
-
-            if restantes_setor:
-                if online_setor:
-                    blocos_html.append('<div class="zsql-divisor-coluna">Manutenção / Setup / Paradas</div>')
-                for m in restantes_setor:
-                    blocos_html.append(montar_card_html(m, agora))
-
-            st.markdown("".join(blocos_html), unsafe_allow_html=True)
-
-    # Se surgir alguma máquina não mapeada em nenhum dos 3 setores, exibe abaixo
-    if grupos["Outros"]:
-        lista_outros = grupos["Outros"]
-        lista_outros.sort(key=chave_ordenacao_maquina)
-        st.markdown(montar_header_setor_html("Outros", lista_outros), unsafe_allow_html=True)
-        for i in range(0, len(lista_outros), 3):
-            cols_outros = st.columns(3, gap="medium")
-            for j in range(3):
-                if i + j < len(lista_outros):
-                    with cols_outros[j]:
-                        st.markdown(montar_card_html(lista_outros[i + j], agora), unsafe_allow_html=True)
-
-    qtd_piscando = sum(1 for m in maquinas if m.get("piscando"))
-    st.caption(f"🟢 Último pulso do monitor: {atualizado_em} | Máquinas online: {total_online} | A piscar: {qtd_piscando}")
-
-atualizar_conteudo()
-render_barra_relogio_zsql()
+        if obter_estado_base(m) == "VERDE" and normalizar_texto(m.get("energia
